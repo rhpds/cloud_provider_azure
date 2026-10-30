@@ -125,7 +125,7 @@ def main():
             result = execute(az, p['action'], p['settings'], path)
         module.exit_json(changed=az.changed, **result)
     except (AzureError, OSError, ValueError, KeyError, StopIteration) as exc:
-        module.fail_json(msg=str(exc))
+        module.fail_json(msg=str(exc), diagnostic=getattr(exc, 'diagnostic', {}))
 
 
 if __name__ == '__main__':

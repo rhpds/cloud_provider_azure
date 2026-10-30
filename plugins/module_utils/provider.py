@@ -9,7 +9,9 @@ import time
 
 
 class AzureError(Exception):
-    pass
+    def __init__(self, message, diagnostic=None):
+        super().__init__(message)
+        self.diagnostic = diagnostic or {}
 
 
 def owned(group, project):
@@ -136,10 +138,23 @@ class Azure:
             raise AzureError('ARO version is not available in this region: ' + s['version'])
         skus = self.call('vm', 'list-skus', '--location', s['region'], '--resource-type', 'virtualMachines', '--all')
         requirements = {}
-        for size, count in ((s['master_size'], 4), (s['worker_size'], s['worker_count'])):
+        for field, count in (('master_size', 4), ('worker_size', s['worker_count'])):
+            size = s[field]
             matches = [x for x in skus if x['name'] == size and not x.get('restrictions')]
             if not matches:
-                raise AzureError('Unavailable VM SKU: ' + size)
+                candidates = [x for x in skus if x['name'] == size]
+                reasons = []
+                for candidate in candidates:
+                    for restriction in candidate.get('restrictions', []):
+                        info = restriction.get('restrictionInfo') or {}
+                        reason = restriction.get('type', 'Unknown') + ': ' + restriction.get('reasonCode', 'Unknown')
+                        if info.get('zones'):
+                            reason += ' (zones ' + ', '.join(info['zones']) + ')'
+                        reasons.append(reason)
+                if not candidates:
+                    reasons.append('SKU is not listed in the selected region')
+                raise AzureError('Unavailable VM SKU: ' + size,
+                                 {'kind': 'sku', 'setting': field, 'reasons': reasons})
             sku = matches[0]
             cores = int(next(x['value'] for x in sku['capabilities'] if x['name'] == 'vCPUs'))
             requirements[sku['family'].lower()] = requirements.get(sku['family'].lower(), 0) + cores * count
@@ -147,8 +162,10 @@ class Azure:
         requirements['cores'] = sum(requirements.values())
         for name, needed in requirements.items():
             quota = next((x for x in usage if x['name']['value'].lower() == name.lower()), None)
-            if quota is None or quota['limit'] - quota['currentValue'] < needed:
-                raise AzureError('Insufficient or unavailable quota: ' + name)
+            available = int(quota['limit']) - int(quota['currentValue']) if quota else 0
+            if quota is None or available < needed:
+                raise AzureError('Insufficient or unavailable quota: ' + name,
+                                 {'kind': 'quota', 'family': name, 'required': needed, 'available': available})
 
     def aro_install(self, s):
         networks = {k: ipaddress.ip_network(s[k]) for k in

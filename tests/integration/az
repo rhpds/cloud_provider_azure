@@ -65,7 +65,9 @@ if args[:3] == ['deployment', 'group', 'create']:
 if args[:2] == ['vm', 'list']: answer([{'name': 'bastion-test', 'id': '/bastion', 'tags': {'agnosticd_project': 'openshift-cluster-test'}, 'publicIps': '192.0.2.1', 'privateIps': '10.240.0.4'}])
 if args[:2] in (['vm', 'start'], ['vm', 'deallocate']): answer(None)
 if args[:2] == ['vm', 'list-skus']:
-    answer([{'name': name, 'family': 'standardDSv3Family', 'restrictions': [], 'capabilities': [{'name': 'vCPUs', 'value': cores}]} for name,cores in [('Standard_D8s_v3','8'),('Standard_D4s_v3','4')]])
+    restrictions = ([{'type': 'Zone', 'reasonCode': 'NotAvailableForSubscription',
+                      'restrictionInfo': {'zones': ['2', '3']}}] if os.environ.get('AZURE_TEST_RESTRICT_SKU') else [])
+    answer([{'name': name, 'family': 'standardDSv3Family', 'restrictions': restrictions, 'capabilities': [{'name': 'vCPUs', 'value': cores}]} for name,cores in [('Standard_D8s_v3','8'),('Standard_D4s_v3','4')]])
 if args[:2] == ['vm', 'list-usage']: answer([{'name': {'value': name}, 'limit': 1000, 'currentValue': 0} for name in ['cores','standardDSv3Family']])
 if args[:2] == ['aro', 'get-versions']: answer(['4.20.1'])
 if args[:2] == ['aro', 'show']:

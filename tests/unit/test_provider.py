@@ -216,6 +216,39 @@ class ProviderTests(unittest.TestCase):
             self.az.preflight(self.s)
         self.assertFalse(any('create' in x for x in self.calls))
 
+    def test_sku_preflight_reports_public_restriction_details(self):
+        self.s.update(version='4.20.1', master_size='Standard_D8s_v3', worker_size='Standard_D4s_v3', worker_count=3)
+        restriction = dict(type='Zone', reasonCode='NotAvailableForSubscription', restrictionInfo={'zones': ['2', '3']})
+        sku = dict(name='Standard_D8s_v3', restrictions=[restriction])
+        self.responses = [(0, {'registrationState': 'Registered'})] * 6 + [(0, ['4.20.1']), (0, [sku])]
+        with self.assertRaises(provider.AzureError) as error:
+            self.az.preflight(self.s)
+        self.assertEqual(error.exception.diagnostic,
+                         {'kind': 'sku', 'setting': 'master_size',
+                          'reasons': ['Zone: NotAvailableForSubscription (zones 2, 3)']})
+        self.assertFalse(any('create' in x for x in self.calls))
+
+    def test_quota_preflight_accepts_string_counts_and_family_case_differences(self):
+        self.s.update(version='4.20.1', master_size='master', worker_size='worker', worker_count=3)
+        skus = [dict(name=name, family='StandardDsv6Family', restrictions=[], capabilities=[dict(name='vCPUs', value=cores)])
+                for name, cores in [('master', '8'), ('worker', '4')]]
+        self.responses = [(0, {'registrationState': 'Registered'})] * 6 + [
+            (0, ['4.20.1']), (0, skus),
+            (0, [dict(name=dict(value='standardDSv6Family'), limit='44', currentValue='0'),
+                 dict(name=dict(value='cores'), limit='268', currentValue='2')])]
+        self.az.preflight(self.s)
+
+    def test_quota_preflight_reports_available_and_required_cores(self):
+        self.s.update(version='4.20.1', master_size='master', worker_size='worker', worker_count=3)
+        skus = [dict(name=name, family='family', restrictions=[], capabilities=[dict(name='vCPUs', value=cores)])
+                for name, cores in [('master', '8'), ('worker', '4')]]
+        self.responses = [(0, {'registrationState': 'Registered'})] * 6 + [
+            (0, ['4.20.1']), (0, skus), (0, [dict(name=dict(value='family'), limit='10', currentValue='0')])]
+        with self.assertRaises(provider.AzureError) as error:
+            self.az.preflight(self.s)
+        self.assertEqual(error.exception.diagnostic,
+                         {'kind': 'quota', 'family': 'family', 'required': 44, 'available': 10})
+
 
 if __name__ == '__main__':
     unittest.main()

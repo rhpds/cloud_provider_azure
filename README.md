@@ -81,6 +81,9 @@ optional. Defaults are three workers, D8s_v3 control plane, D4s_v3 workers and
 VM SKU restrictions and regional/family core quotas, allowing an extra control
 plane-sized bootstrap VM. Azure CLI validates ARO permissions during creation.
 Failed clusters require diagnosis and explicit destruction before recreation.
+Preflight errors report the selected region and node sizes, SKU restriction
+reasons, and required/available core quota while credentials remain protected.
+Changing VM sizes cannot bypass subscription restrictions or family quota limits.
 
 The bastion defaults to Azure user `azure`, PAYG RHEL 9, Standard_D2s_v5 and a
 64 GiB Premium disk. Configure `azure_bastion_user`, `azure_bastion_vm_size`, and

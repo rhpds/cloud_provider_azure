@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import yaml
 
 
 def main():
@@ -40,6 +41,41 @@ def main():
                     azure_service_principal_password='synthetic-password', azure_tenant='synthetic-tenant',
                     azure_resource_group='sandbox', azure_region='eastus',
                     azure_dns_zone='test.azure.redhatworkshops.io')
+        # Exercise the actual protected asynchronous task and its public error handler.
+        install_tasks = yaml.safe_load((collection / 'roles/host_ocp4_aro_install/tasks/main.yml').read_text())
+        create_task = next(task for task in install_tasks[0]['block'] if task['name'] == 'Create or reconnect to ARO cluster')
+        create_task['block'][0]['poll'] = 1
+        create_task['block'][0]['agnosticd.cloud_provider_azure.azure_environment']['config_dir'] = str(root / 'fake-cli')
+        fragment = root / 'protected-create.yml'
+        fragment.write_text(yaml.safe_dump([create_task], sort_keys=False))
+        failure_output = root / 'failure-output'
+        failure_output.mkdir()
+        failure_vars = dict(flat, config='openshift-cluster', guid='test', project_tag='openshift-cluster-test',
+                            aro_version='4.20.1', host_ocp4_deploy_installation_method='aro',
+                            output_dir=str(failure_output), ansible_user='azure',
+                            ansible_python_interpreter=sys.executable)
+        failure_playbook = root / 'failure.yml'
+        failure_playbook.write_text(yaml.safe_dump([dict(
+            name='Verify public diagnostics from protected ARO provisioning', hosts='localhost',
+            connection='local', gather_facts=False, vars=failure_vars,
+            tasks=[{'name': 'Initialize synthetic Azure settings', 'ansible.builtin.include_role':
+                    {'name': 'agnosticd.cloud_provider_azure.initialize'}},
+                   {'name': 'Capture the expected SKU rejection',
+                    'block': [{'name': 'Run protected task', 'ansible.builtin.include_tasks': str(fragment)}],
+                    'rescue': [{'name': 'Verify public failure details', 'ansible.builtin.assert': {'that': [
+                        "'Standard_D8s_v3' in ansible_failed_result.msg",
+                        "'NotAvailableForSubscription' in ansible_failed_result.msg",
+                        "'synthetic-password' not in ansible_failed_result.msg"]}},
+                        {'name': 'Record expected failure', 'ansible.builtin.set_fact': {'failure_observed': True}}]},
+                   {'name': 'Require the SKU failure to have been handled',
+                    'ansible.builtin.assert': {'that': 'failure_observed | default(false)'}}])], sort_keys=False))
+        failure_env = dict(env, AZURE_TEST_RESTRICT_SKU='true', AZURE_TEST_STATE=str(root / 'failure-state.json'))
+        failure_result = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook', str(failure_playbook)],
+                                        env=failure_env, cwd=collection, text=True, capture_output=True, check=False)
+        if failure_result.returncode or 'synthetic-password' in failure_result.stdout:
+            print(failure_result.stdout + failure_result.stderr)
+            return 1
+        print('PASS: protected asynchronous SKU failure reports public diagnostics')
         aliases = dict(flat)
         aliases['azure_subscription_id'] = aliases.pop('azure_subscription')
         aliases['azure_tenant_id'] = aliases.pop('azure_tenant')

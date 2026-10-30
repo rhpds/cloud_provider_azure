@@ -10,16 +10,35 @@
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.install_cli
   - name: Create or reconnect to ARO cluster
-    agnosticd.cloud_provider_azure.azure_environment:
-      action: aro_install
-      auth: "{{ hostvars.localhost.azure_auth }}"
-      settings: "{{ hostvars.localhost.azure_settings | combine({'pull_secret': ocp4_pull_secret | default('')}) }}"
-      config_dir: "/home/{{ ansible_user }}/.azure-agnosticd"
-      project: "{{ project_tag }}"
-    register: azure_aro_result
-    async: 7500
-    poll: 30
-    no_log: true
+    block:
+    - name: Provision ARO using protected credentials
+      agnosticd.cloud_provider_azure.azure_environment:
+        action: aro_install
+        auth: "{{ hostvars.localhost.azure_auth }}"
+        settings: "{{ hostvars.localhost.azure_settings | combine({'pull_secret': ocp4_pull_secret | default('')}) }}"
+        config_dir: "/home/{{ ansible_user }}/.azure-agnosticd"
+        project: "{{ project_tag }}"
+      register: azure_aro_result
+      async: 7500
+      poll: 30
+      no_log: true
+    rescue:
+    - name: Report non-secret ARO preflight diagnostics
+      vars:
+        _diagnostic: "{{ azure_aro_result.diagnostic | default({}) }}"
+        _settings: "{{ hostvars.localhost.azure_settings }}"
+      ansible.builtin.fail:
+        msg: >-
+          ARO provisioning failed in {{ _settings.region }}.
+          Control-plane size={{ _settings.master_size }}, worker size={{ _settings.worker_size }}.
+          {% if _diagnostic.kind | default('') == 'sku' %}
+          Unavailable {{ _diagnostic.setting }}: {{ _diagnostic.reasons | join('; ') }}.
+          {% elif _diagnostic.kind | default('') == 'quota' %}
+          Insufficient {{ _diagnostic.family }} core quota:
+          required={{ _diagnostic.required }}, available={{ _diagnostic.available }} (including bootstrap allowance).
+          {% else %}
+          The protected provisioning operation failed; no credential-bearing output is displayed.
+          {% endif %}
   - name: Install OpenShift client
     ansible.builtin.include_role:
       name: host_ocp4_installer
