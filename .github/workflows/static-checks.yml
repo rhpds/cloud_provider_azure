@@ -18,8 +18,6 @@ jobs:
   static-checks:
     name: Run yamllint and ansible-lint
     runs-on: ubuntu-latest
-    env:
-      ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/collections
     strategy:
       matrix:
         python-version:
@@ -41,6 +39,8 @@ jobs:
 
     - name: Build and install collection for module resolution
       run: |
+        export ANSIBLE_COLLECTIONS_PATH="${RUNNER_TEMP}/collections"
+        echo "ANSIBLE_COLLECTIONS_PATH=${ANSIBLE_COLLECTIONS_PATH}" >> "${GITHUB_ENV}"
         ansible-galaxy collection build --output-path "${RUNNER_TEMP}"
         ansible-galaxy collection install --no-deps \
           "${RUNNER_TEMP}"/agnosticd-cloud_provider_azure-*.tar.gz \
