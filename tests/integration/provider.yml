@@ -63,6 +63,25 @@
   - name: Render ARM template
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.template_generate
+  - name: Verify default RHEL 9 bastion image
+    ansible.builtin.assert:
+      that: azure_arm_template.resources[-1].properties.storageProfile.imageReference.sku == '9-lvm-gen2'
+  - name: Render ARM template with RHEL 10 image override
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.template_generate
+    vars:
+      azure_bastion_image:
+        publisher: RedHat
+        offer: RHEL
+        sku: 10-lvm-gen2
+        version: latest
+  - name: Verify RHEL 10 override reaches ARM image reference
+    ansible.builtin.assert:
+      that:
+      - azure_arm_template.resources[-1].properties.storageProfile.imageReference.publisher == 'RedHat'
+      - azure_arm_template.resources[-1].properties.storageProfile.imageReference.offer == 'RHEL'
+      - azure_arm_template.resources[-1].properties.storageProfile.imageReference.sku == '10-lvm-gen2'
+      - azure_arm_template.resources[-1].properties.storageProfile.imageReference.version == 'latest'
   - name: Provision infrastructure
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.template_create

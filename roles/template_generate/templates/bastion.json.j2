@@ -117,12 +117,7 @@
           "vmSize": "{{ azure_bastion_vm_size }}"
         },
         "storageProfile": {
-          "imageReference": {
-            "publisher": "RedHat",
-            "offer": "RHEL",
-            "sku": "9-lvm-gen2",
-            "version": "latest"
-          },
+          "imageReference": {{ azure_bastion_image | to_json }},
           "osDisk": {
             "createOption": "FromImage",
             "diskSizeGB": 64,

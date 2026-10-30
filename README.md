@@ -89,6 +89,21 @@ provision-key role. A Standard static IP and SSH-only NSG supply access.
 Marketplace availability and RHEL subscription/repository configuration remain
 prerequisites, following the normal v2 bastion roles.
 
+Override the complete `azure_bastion_image` Marketplace image reference to use
+RHEL 10 for a new deployment:
+
+```yaml
+azure_bastion_image:
+  publisher: RedHat
+  offer: RHEL
+  sku: 10-lvm-gen2
+  version: latest
+```
+
+Successful infrastructure deployments are reused. Changing this variable does
+not reimage an existing bastion; use a new deployment GUID to provision another
+environment with the selected image.
+
 ## Ownership and cleanup
 
 Default owned groups are `<config>-<guid>-infra` and `<config>-<guid>-cluster`;
@@ -126,8 +141,11 @@ the standard v2 contract, including `<config>_<guid>_kubeconfig` on the controll
 ## Runtime and verification
 
 Controller and RHEL bastion use Azure CLI 2.90.0. The existing v2 public execution
-environment Containerfile pins that version; rebuild the EE before use. No ARO
-preview extension, Bicep or Azure Python SDK is needed by this collection: its
+environment Containerfile pins that version; rebuild the EE before use.
+The bastion installer selects Microsoft's distribution-specific RHEL 8/9/10
+repository and signing key, replaces the legacy `azure-cli` repository URL on
+reruns, and refreshes DNF metadata before installing the pinned package.
+No ARO preview extension, Bicep or Azure Python SDK is needed by this collection: its
 module uses CLI JSON and Python's standard library. Collection dependencies are
 declared in `galaxy.yml`; v2 supplies `agnosticd.core` and shared host roles.
 

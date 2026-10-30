@@ -1,0 +1,6 @@
+---
+azure_bastion_image:
+  publisher: RedHat
+  offer: RHEL
+  sku: 9-lvm-gen2
+  version: latest
