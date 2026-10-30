@@ -63,6 +63,33 @@ class ProviderTests(unittest.TestCase):
         with self.assertRaisesRegex(provider.AzureError, 'DeploymentNotFound'):
             self.az.call('deployment', 'group', 'show', '-g', 'infra', '-n', 'bastion')
 
+    def test_missing_dns_record_allows_initial_creation(self):
+        self.responses = [(1, "ERROR: (NotFound) The resource record 'bastion' does not exist.\n"
+                              "Code: NotFound\nMessage: The resource record 'bastion' does not exist.\n")]
+        self.assertIsNone(self.az.call('network', 'dns', 'record-set', 'a', 'show', missing=True))
+
+    def test_missing_dns_record_is_fatal_unless_explicitly_allowed(self):
+        self.responses = [(1, 'ERROR: (NotFound) The resource record does not exist.')]
+        with self.assertRaisesRegex(provider.AzureError, 'NotFound'):
+            self.az.call('network', 'dns', 'record-set', 'a', 'show')
+
+    def test_authorization_error_mentioning_absence_is_not_ignored(self):
+        self.responses = [(1, 'ERROR: (AuthorizationFailed) Cannot determine whether ResourceNotFound applies.\n'
+                              'Code: AuthorizationFailed\n')]
+        with self.assertRaisesRegex(provider.AzureError, 'AuthorizationFailed'):
+            self.az.call('network', 'dns', 'record-set', 'a', 'show', missing=True)
+
+    def test_only_exact_absence_codes_are_ignored(self):
+        for code in ('ResourceNotFound', 'ResourceGroupNotFound', 'ParentResourceNotFound',
+                     'DeploymentNotFound', 'NotFound'):
+            for error in (code, 'ERROR: (' + code + ') Missing resource.', 'Code: ' + code + '\n'):
+                with self.subTest(error=error):
+                    self.responses = [(1, error)]
+                    self.assertIsNone(self.az.call('resource', 'show', missing=True))
+        self.responses = [(1, 'ERROR: (NotFoundInCache) Network lookup failed.')]
+        with self.assertRaisesRegex(provider.AzureError, 'NotFoundInCache'):
+            self.az.call('resource', 'show', missing=True)
+
     def test_unowned_group_cannot_be_deleted(self):
         self.responses = [(0, {'tags': {'agnosticd_project': 'someone-else'}})]
         with self.assertRaisesRegex(provider.AzureError, 'unowned'):

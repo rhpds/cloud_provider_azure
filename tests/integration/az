@@ -37,7 +37,8 @@ if args[:4] == ['network', 'dns', 'zone', 'show']: answer({'name': 'test.azure.r
 if args[:4] == ['network', 'dns', 'record-set', 'a']:
     operation = args[4]
     if operation == 'show':
-        if s['record'] is None: missing()
+        if s['record'] is None:
+            missing("ERROR: (NotFound) The resource record 'bastion' does not exist.\nCode: NotFound")
         answer(s['record'])
     if operation == 'create': s['record'] = {'metadata': {'agnosticd_project': 'openshift-cluster-test'}}
     if operation == 'delete': s['record'] = None

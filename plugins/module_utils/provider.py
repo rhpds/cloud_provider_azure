@@ -43,10 +43,13 @@ class Azure:
         cmd += ['--only-show-errors', '--output', 'json']
         result = self.runner(cmd, env=self.env, text=True, capture_output=True)
         if result.returncode:
+            # Parse the reported code, not arbitrary mentions in the error message.
+            header = re.search(r'^ERROR:\s*\(([A-Za-z0-9_]+)\)', result.stderr, re.MULTILINE)
+            code_line = re.search(r'^Code:\s*([A-Za-z0-9_]+)\s*$', result.stderr, re.MULTILINE)
+            code = (header or code_line).group(1) if header or code_line else result.stderr.strip()
             # Never confuse forbidden, bad credentials or network failures with absence.
-            if missing and any(x in result.stderr for x in
-                               ('ResourceNotFound', 'ResourceGroupNotFound', 'ParentResourceNotFound',
-                                'DeploymentNotFound')):
+            if missing and code in ('ResourceNotFound', 'ResourceGroupNotFound', 'ParentResourceNotFound',
+                                    'DeploymentNotFound', 'NotFound'):
                 return None
             message = result.stderr
             for key in ('password', 'app_id'):
