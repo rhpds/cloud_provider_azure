@@ -1,22 +1,46 @@
 ---
-- name: Validate sandbox payload
+- name: Validate deployment inputs
   ansible.builtin.assert:
     that:
-    - azure_sandbox.credentials | default([]) | length == 1
     - guid is defined and guid != 'notset'
     - host_ocp4_deploy_installation_method | default('openshift_install') in ['aro', 'openshift_install']
     - aro_identity_mode in ['managed_identity', 'service_principal']
-    fail_msg: A single Azure sandbox credential and a supported installation method are required
+    fail_msg: A valid guid and a supported installation method and identity mode are required
 
-- name: Normalize sandbox authentication
+- name: Validate nested sandbox payload when supplied
+  when: azure_sandbox is defined
+  ansible.builtin.assert:
+    that:
+    - azure_sandbox is mapping
+    - azure_sandbox.credentials | default([]) | length == 1
+    - azure_sandbox.credentials[0] is mapping
+    fail_msg: azure_sandbox must contain exactly one complete credentials mapping
+  no_log: true
+
+- name: Normalize nested sandbox authentication
+  when: azure_sandbox is defined
   ansible.builtin.set_fact:
     azure_auth: "{{ azure_sandbox.credentials[0] }}"
   no_log: true
 
-- name: Validate required sandbox fields
+- name: Normalize flattened sandbox authentication
+  when: azure_sandbox is not defined
+  ansible.builtin.set_fact:
+    azure_auth:
+      subscription_id: "{{ azure_subscription | default(azure_subscription_id | default('')) }}"
+      app_id: "{{ azure_service_principal_id | default('') }}"
+      password: "{{ azure_service_principal_password | default('') }}"
+      tenant: "{{ azure_tenant | default(azure_tenant_id | default('')) }}"
+      resource_group: "{{ azure_resource_group | default('') }}"
+      azure_region: "{{ azure_region | default('') }}"
+  no_log: true
+
+- name: Validate required Azure credential fields
   ansible.builtin.assert:
-    that: azure_auth[item] | default('') | string | length > 0
-    fail_msg: "Missing sandbox field {{ item }}"
+    that:
+    - azure_auth[item] | default(none) is string
+    - azure_auth[item] | default('') | length > 0
+    fail_msg: "Missing Azure credential field {{ item }}; provide a complete azure_sandbox payload or the flattened Azure variables"
   loop: [subscription_id, app_id, password, tenant, resource_group, azure_region]
 
 - name: Set provider settings

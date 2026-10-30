@@ -1,0 +1,27 @@
+---
+- name: Verify Azure credential normalization
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    config: openshift-cluster
+    guid: test
+    project_tag: openshift-cluster-test
+    host_ocp4_deploy_installation_method: aro
+    aro_version: 4.20.1
+  tasks:
+  - name: Initialize provider with supplied credential form
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.initialize
+  - name: Verify normalized authentication and settings
+    ansible.builtin.assert:
+      that:
+      - azure_auth.subscription_id == 'synthetic-subscription'
+      - azure_auth.app_id == 'synthetic-app'
+      - azure_auth.password == 'synthetic-password'
+      - azure_auth.tenant == 'synthetic-tenant'
+      - azure_auth.resource_group == 'sandbox'
+      - azure_settings.region == 'eastus'
+      - azure_settings.sandbox_group == 'sandbox'
+      - azure_settings.dns_zone == 'test.azure.redhatworkshops.io'
+    no_log: true

@@ -7,7 +7,23 @@ architecture ARO. The `cloud_provider_azure_codex_try1` prototype is not used.
 ## Sandbox contract
 
 The sandbox owns subscription allocation/release, the existing resource group,
-and the delegated DNS zone. Supply exactly one credential entry:
+and the delegated DNS zone. Supply either the flattened sandbox variables:
+
+```yaml
+azure_subscription: <subscription UUID>
+azure_service_principal_id: <service principal application UUID>
+azure_service_principal_password: <secret>
+azure_tenant: redhat0.onmicrosoft.com
+azure_resource_group: openenv-example
+azure_region: eastus
+azure_dns_zone: example.azure.redhatworkshops.io
+```
+
+`azure_subscription_id` and `azure_tenant_id` are accepted aliases when
+`azure_subscription` and `azure_tenant`, respectively, are undefined.
+`azure_application` and `sandbox_name` are metadata, not authentication inputs.
+
+Alternatively, supply exactly one nested credential entry:
 
 ```yaml
 azure_sandbox:
@@ -20,6 +36,11 @@ azure_sandbox:
     azure_region: eastus
     # pool_subscription, azure_account and sandbox id are optional metadata.
 ```
+
+If `azure_sandbox` is supplied, that payload is authoritative and must be
+complete. Missing fields are not filled from flattened credentials or ambient
+sessions. Without `azure_sandbox`, the flattened variables are normalized to the
+same internal authentication/settings contract for provision, destroy and lifecycle.
 
 The existing zone defaults to `<guid>.azure.redhatworkshops.io` in the sandbox
 resource group. Override `azure_root_dns_zone` or `azure_dns_zone` as appropriate.
