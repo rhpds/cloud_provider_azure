@@ -24,6 +24,6 @@
       - azure_settings.region == 'eastus'
       - azure_settings.sandbox_group == 'sandbox'
       - azure_settings.dns_zone == 'test.azure.redhatworkshops.io'
-      - azure_settings.master_size == (expected_master_size | default('Standard_D8s_v6'))
-      - azure_settings.worker_size == (expected_worker_size | default('Standard_D4s_v6'))
+      - azure_settings.master_size == (expected_master_size | default('Standard_D8s_v5'))
+      - azure_settings.worker_size == (expected_worker_size | default('Standard_D4s_v5'))
     no_log: true

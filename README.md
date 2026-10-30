@@ -72,10 +72,8 @@ aro_version: <exact version from az aro get-versions --location eastus>
 aro_identity_mode: managed_identity  # alternatively service_principal
 ```
 
-Dsv6 node sizes require ARO 4.19 or newer.
-
 ARO uses public API/ingress and Azure-managed endpoint DNS. Its pull secret is
-optional. Defaults are three workers, D8s_v6 control plane, D4s_v6 workers and
+optional. Defaults are three workers, D8s_v5 control plane, D4s_v5 workers and
 128 GiB worker disks. Override `aro_master_vm_size`, `aro_worker_vm_size`,
 `aro_worker_count`, `aro_worker_disk_size`, `aro_vnet_cidr`,
 `aro_master_subnet_cidr`, `aro_worker_subnet_cidr`, `aro_pod_cidr`, and

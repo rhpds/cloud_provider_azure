@@ -69,8 +69,8 @@ if args[:2] in (['vm', 'start'], ['vm', 'deallocate']):
 if args[:2] == ['vm', 'list-skus']:
     restrictions = ([{'type': 'Zone', 'reasonCode': 'NotAvailableForSubscription',
                       'restrictionInfo': {'zones': ['2', '3']}}] if os.environ.get('AZURE_TEST_RESTRICT_SKU') else [])
-    answer([{'name': name, 'family': 'StandardDsv6Family', 'restrictions': restrictions, 'capabilities': [{'name': 'vCPUs', 'value': cores}]} for name,cores in [('Standard_D8s_v6','8'),('Standard_D4s_v6','4')]])
-if args[:2] == ['vm', 'list-usage']: answer([{'name': {'value': name}, 'limit': 1000, 'currentValue': 0} for name in ['cores','StandardDsv6Family']])
+    answer([{'name': name, 'family': 'StandardDSv5Family', 'restrictions': restrictions, 'capabilities': [{'name': 'vCPUs', 'value': cores}]} for name,cores in [('Standard_D8s_v5','8'),('Standard_D4s_v5','4')]])
+if args[:2] == ['vm', 'list-usage']: answer([{'name': {'value': name}, 'limit': 1000, 'currentValue': 0} for name in ['cores','StandardDSv5Family']])
 if args[:2] == ['aro', 'get-versions']: answer(['4.20.1'])
 if args[:2] == ['aro', 'show']:
     if s['cluster'] is None: missing()

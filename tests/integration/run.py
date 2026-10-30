@@ -85,14 +85,14 @@ def main():
                     azure_dns_zone='test.azure.redhatworkshops.io')
         ownership_file = output / 'openshift-cluster_test_azure_ownership.json'
         legacy = json.loads(ownership_file.read_text())
-        legacy['settings'].update(master_size='Standard_D8s_v3', worker_size='Standard_D4s_v3')
+        legacy['settings'].update(master_size='Standard_D8s_v6', worker_size='Standard_D4s_v6')
         state_file = Path(env['AZURE_TEST_STATE'])
         original_state = state_file.read_text()
         size_cases = [
             ('before-cluster', {}, False, True),
             ('existing-cluster', {}, True, False),
-            ('status-preserves-sizes', dict(ACTION='status', expected_master_size='Standard_D8s_v3',
-                                            expected_worker_size='Standard_D4s_v3'), True, True),
+            ('status-preserves-sizes', dict(ACTION='status', expected_master_size='Standard_D8s_v6',
+                                            expected_worker_size='Standard_D4s_v6'), True, True),
             ('ownership-boundary', dict(azure_infra_resource_group='different-infra'), False, False),
         ]
         for name, overrides, cluster_exists, expected_success in size_cases:
@@ -141,7 +141,7 @@ def main():
                    {'name': 'Capture the expected SKU rejection',
                     'block': [{'name': 'Run protected task', 'ansible.builtin.include_tasks': str(fragment)}],
                     'rescue': [{'name': 'Verify public failure details', 'ansible.builtin.assert': {'that': [
-                        "'Standard_D8s_v6' in ansible_failed_result.msg",
+                        "'Standard_D8s_v5' in ansible_failed_result.msg",
                         "'NotAvailableForSubscription' in ansible_failed_result.msg",
                         "'synthetic-password' not in ansible_failed_result.msg"]}},
                         {'name': 'Record expected failure', 'ansible.builtin.set_fact': {'failure_observed': True}}]},
