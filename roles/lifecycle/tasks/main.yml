@@ -1,10 +1,14 @@
 ---
+- name: Validate Azure lifecycle action
+  ansible.builtin.assert:
+    that: azure_lifecycle_action in ['start', 'stop', 'status']
+    fail_msg: Azure lifecycle actions must be start, stop or status; use the destruction roles for cleanup
 - name: Initialize Azure provider
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.initialize
 - name: Apply Azure lifecycle action
   agnosticd.cloud_provider_azure.azure_environment:
-    action: "{{ ACTION }}"
+    action: "{{ azure_lifecycle_action }}"
     auth: "{{ azure_auth }}"
     settings: "{{ azure_settings }}"
     config_dir: "{{ azure_cli_config_dir }}"

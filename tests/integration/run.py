@@ -37,6 +37,48 @@ def main():
         result = subprocess.run(command, env=env, cwd=collection, check=False)
         if result.returncode:
             return result.returncode
+        destroy_playbook = template.parents[3] / 'configs/openshift-cluster/azure/destroy_env.yml'
+        if destroy_playbook.is_file():
+            # Exercise the real v2 preparation play with ACTION supplied as an extra var.
+            # This has higher precedence than the former per-role ACTION: start override.
+            state_file = Path(env['AZURE_TEST_STATE'])
+            previous_state = state_file.read_text()
+            owned = {'tags': {'agnosticd_project': 'openshift-cluster-test'}}
+            state_file.write_text(json.dumps(dict(
+                groups={'openshift-cluster-test-infra': owned, 'openshift-cluster-test-cluster': owned},
+                cluster={'provisioningState': 'Succeeded'}, record={
+                    'metadata': {'agnosticd_project': 'openshift-cluster-test'},
+                    'ARecords': [{'ipv4Address': '192.0.2.1'}]})))
+            prepare = yaml.safe_load(destroy_playbook.read_text())[0]
+            prepare['vars'] = dict(yaml.safe_load((collection / 'tests/integration/provider.yml').read_text())[0]['vars'],
+                                   output_dir=str(output), cloud_provider='azure', ansible_user='azure',
+                                   ssh_provision_key_name='synthetic-ssh-key',
+                                   ssh_provision_key_path=str(output / 'synthetic-ssh-key'),
+                                   ansible_python_interpreter=sys.executable)
+            prepare['tasks'] += [
+                {'name': 'Require ARO to survive destroy preparation', 'ansible.builtin.assert': {
+                    'that': ["azure_lifecycle_result.cluster.provisioningState == 'Succeeded'", "ACTION == 'destroy'"]}},
+                {'name': 'Delete ARO before bastion infrastructure', 'ansible.builtin.include_role': {
+                    'name': 'agnosticd.cloud_provider_azure.host_ocp4_aro_destroy'}},
+                {'name': 'Delete bastion infrastructure after ARO', 'ansible.builtin.include_role': {
+                    'name': 'agnosticd.cloud_provider_azure.template_destroy'}},
+                {'name': 'Repeat infrastructure destruction', 'ansible.builtin.include_role': {
+                    'name': 'agnosticd.cloud_provider_azure.template_destroy'}},
+                {'name': 'Require repeated destruction to be a no-op', 'ansible.builtin.assert': {
+                    'that': 'not azure_result.changed'}}]
+            prepare_file = root / 'destroy-preparation.yml'
+            prepare_file.write_text(yaml.safe_dump([prepare], sort_keys=False))
+            prepare_result = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook', str(prepare_file),
+                                             '-e', 'ACTION=destroy'],
+                                            cwd=collection, env=env, text=True, capture_output=True, check=False)
+            state = json.loads(state_file.read_text())
+            if (prepare_result.returncode or state['groups'] or state['cluster'] or state['record']
+                    or state.get('power_actions') != [{'action': 'start', 'id': '/bastion'}]):
+                print('FAIL: v2 destroy preparation and ordered cleanup')
+                print(prepare_result.stdout + prepare_result.stderr)
+                return 1
+            state_file.write_text(previous_state)
+            print('PASS: v2 destroy preparation starts only the bastion, then ordered cleanup is idempotent')
         flat = dict(azure_subscription='synthetic-subscription', azure_service_principal_id='synthetic-app',
                     azure_service_principal_password='synthetic-password', azure_tenant='synthetic-tenant',
                     azure_resource_group='sandbox', azure_region='eastus',

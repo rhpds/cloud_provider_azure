@@ -1,0 +1,2 @@
+---
+azure_lifecycle_action: "{{ ACTION }}"

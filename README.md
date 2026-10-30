@@ -143,6 +143,9 @@ Do not put unrelated resources in deployment-owned groups.
 
 `start`, `stop`, and `status` apply to the bastion and self-managed cluster VMs.
 For ARO they report cluster status but only start/deallocate the bastion.
+The lifecycle role defaults `azure_lifecycle_action` to the run's `ACTION`.
+Destroy preparation sets `azure_lifecycle_action: start` to start the bastion
+before cluster cleanup while preserving the run's `ACTION: destroy`.
 Status is written to `output_dir/status.txt`. Kubeconfig and access facts follow
 the standard v2 contract, including `<config>_<guid>_kubeconfig` on the controller.
 

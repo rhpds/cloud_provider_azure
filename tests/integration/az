@@ -63,7 +63,9 @@ if args[:3] == ['deployment', 'group', 'create']:
     s['deployed']=True
     answer({})
 if args[:2] == ['vm', 'list']: answer([{'name': 'bastion-test', 'id': '/bastion', 'tags': {'agnosticd_project': 'openshift-cluster-test'}, 'publicIps': '192.0.2.1', 'privateIps': '10.240.0.4'}])
-if args[:2] in (['vm', 'start'], ['vm', 'deallocate']): answer(None)
+if args[:2] in (['vm', 'start'], ['vm', 'deallocate']):
+    s.setdefault('power_actions', []).append({'action': args[1], 'id': value('--ids')})
+    answer(None)
 if args[:2] == ['vm', 'list-skus']:
     restrictions = ([{'type': 'Zone', 'reasonCode': 'NotAvailableForSubscription',
                       'restrictionInfo': {'zones': ['2', '3']}}] if os.environ.get('AZURE_TEST_RESTRICT_SKU') else [])
