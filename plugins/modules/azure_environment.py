@@ -75,16 +75,7 @@ def execute(az, action, s, template):
         vms = az.inventory(s)
         if len(vms) != 1 or not vms[0].get('publicIps'):
             raise AzureError('Expected exactly one owned bastion with a public IP')
-        record = az.call('network', 'dns', 'record-set', 'a', 'show', '-g', s['sandbox_group'],
-                         '-z', s['dns_zone'], '-n', 'bastion', missing=True)
-        if record and record.get('metadata', {}).get('agnosticd_project') != az.project:
-            raise AzureError('Refusing unowned bastion DNS record')
-        if not record:
-            az.call('network', 'dns', 'record-set', 'a', 'create', '-g', s['sandbox_group'],
-                    '-z', s['dns_zone'], '-n', 'bastion', '--metadata', 'agnosticd_project=' + az.project)
-            az.changed = True
-        az.call('network', 'dns', 'record-set', 'a', 'add-record', '-g', s['sandbox_group'],
-                '-z', s['dns_zone'], '-n', 'bastion', '-a', vms[0]['publicIps'])
+        az.ensure_bastion_dns(s, vms[0]['publicIps'])
         return dict(vms=vms)
     if action == 'inventory':
         return dict(vms=az.inventory(s))
@@ -100,7 +91,7 @@ def execute(az, action, s, template):
         record = az.call('network', 'dns', 'record-set', 'a', 'show', '-g', s['sandbox_group'],
                          '-z', s['dns_zone'], '-n', 'bastion', missing=True)
         if record:
-            if record.get('metadata', {}).get('agnosticd_project') != az.project:
+            if (record.get('metadata') or {}).get('agnosticd_project') != az.project:
                 raise AzureError('Refusing to delete unowned bastion DNS record')
             az.call('network', 'dns', 'record-set', 'a', 'delete', '-g', s['sandbox_group'],
                     '-z', s['dns_zone'], '-n', 'bastion', '--yes')

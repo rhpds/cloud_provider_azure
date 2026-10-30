@@ -20,6 +20,13 @@ def answer(obj):
     sys.exit()
 
 if args[0] == 'login': answer([])
+if args[0] == 'rest':
+    assert value('--method') == 'put'
+    properties = json.loads(Path(value('--body')[1:]).read_text())['properties']
+    assert properties['metadata']['agnosticd_project'] == 'openshift-cluster-test'
+    assert properties['ARecords'] == [{'ipv4Address': '192.0.2.1'}]
+    s['record'] = dict(properties, etag='synthetic-etag')
+    answer({'properties': s['record']})
 if args[:2] == ['provider', 'show']: answer({'registrationState': 'Registered'})
 if args[:2] == ['group', 'show']:
     name = value('--name', value('-n'))
@@ -41,6 +48,9 @@ if args[:4] == ['network', 'dns', 'record-set', 'a']:
             missing("ERROR: (NotFound) The resource record 'bastion' does not exist.\nCode: NotFound")
         answer(s['record'])
     if operation == 'create': s['record'] = {'metadata': {'agnosticd_project': 'openshift-cluster-test'}}
+    if operation == 'add-record':
+        # Match the CLI behavior that loses metadata when rebuilding the record set.
+        s['record'] = {'ARecords': [{'ipv4Address': value('-a')}], 'TTL': 3600, 'etag': 'synthetic-etag'}
     if operation == 'delete': s['record'] = None
     answer(s['record'])
 if args[:3] == ['deployment', 'group', 'show']:

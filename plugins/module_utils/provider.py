@@ -76,6 +76,41 @@ class Azure:
             self.call('group', 'delete', '--name', name, '--yes')
             self.changed = True
 
+    def ensure_bastion_dns(self, settings, public_ip):
+        record = self.call('network', 'dns', 'record-set', 'a', 'show', '-g', settings['sandbox_group'],
+                           '-z', settings['dns_zone'], '-n', 'bastion', missing=True)
+        metadata = (record or {}).get('metadata') or {}
+        if record and metadata.get('agnosticd_project') != self.project:
+            raise AzureError('Refusing unowned bastion DNS record')
+        records = (record or {}).get('ARecords', (record or {}).get('aRecords', [])) or []
+        desired_records = [{'ipv4Address': public_ip}]
+        if record and records == desired_records:
+            return
+        if record and not record.get('etag'):
+            raise AzureError('Bastion DNS record has no ETag; refusing an unconditional update')
+        body = {'properties': {
+            'TTL': (record or {}).get('TTL', (record or {}).get('ttl', 3600)),
+            'metadata': dict(metadata, agnosticd_project=self.project),
+            'ARecords': desired_records,
+        }}
+        url = ('https://management.azure.com/subscriptions/' + self.auth['subscription_id']
+               + '/resourceGroups/' + settings['sandbox_group']
+               + '/providers/Microsoft.Network/dnsZones/' + settings['dns_zone']
+               + '/A/bastion?api-version=2018-05-01')
+        condition = 'If-Match=' + record['etag'] if record else 'If-None-Match=*'
+        # CLI add-record reconstructs the record set without metadata. Write both properties atomically.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'dns-record.json')
+            with open(path, 'w') as stream:
+                json.dump(body, stream)
+            os.chmod(path, 0o600)
+            result = self.call('rest', '--method', 'put', '--url', url,
+                               '--headers', condition, '--body', '@' + path)
+        properties = result.get('properties', {})
+        if properties.get('metadata', {}).get('agnosticd_project') != self.project:
+            raise AzureError('Azure did not return the bastion DNS ownership metadata')
+        self.changed = True
+
     def wait_cluster(self, settings):
         deadline = time.monotonic() + 7200
         while time.monotonic() < deadline:

@@ -26,6 +26,8 @@ class ProviderTests(unittest.TestCase):
 
     def run_cli(self, command, **kwargs):
         self.calls.append(command)
+        if '--body' in command:
+            self.last_body = json.loads(Path(command[command.index('--body') + 1][1:]).read_text())
         code, value = self.responses.pop(0)
         return SimpleNamespace(returncode=code, stdout=json.dumps(value) if code == 0 else '',
                                stderr=value if code else '')
@@ -95,6 +97,57 @@ class ProviderTests(unittest.TestCase):
         with self.assertRaisesRegex(provider.AzureError, 'unowned'):
             self.az.delete_group('infra', 'eastus')
         self.assertEqual(len(self.calls), 1)
+
+    def test_dns_creation_writes_ip_and_ownership_atomically(self):
+        self.s.update(sandbox_group='sandbox', dns_zone='test.example.com')
+        self.responses = [(1, 'NotFound'), (0, {'properties': {'metadata': {'agnosticd_project': 'project'}}})]
+        self.az.ensure_bastion_dns(self.s, '192.0.2.1')
+        self.assertEqual(self.last_body['properties']['metadata'], {'agnosticd_project': 'project'})
+        self.assertEqual(self.last_body['properties']['ARecords'], [{'ipv4Address': '192.0.2.1'}])
+        self.assertIn('If-None-Match=*', self.calls[1])
+        self.assertTrue(self.az.changed)
+
+    def test_dns_retry_does_not_rewrite_owned_record(self):
+        self.s.update(sandbox_group='sandbox', dns_zone='test.example.com')
+        self.responses = [(0, {'metadata': {'agnosticd_project': 'project'},
+                               'ARecords': [{'ipv4Address': '192.0.2.1'}]})]
+        self.az.ensure_bastion_dns(self.s, '192.0.2.1')
+        self.assertEqual(len(self.calls), 1)
+        self.assertFalse(self.az.changed)
+
+    def test_dns_update_preserves_metadata_and_checks_etag(self):
+        self.s.update(sandbox_group='sandbox', dns_zone='test.example.com')
+        metadata = {'agnosticd_project': 'project', 'other': 'retained'}
+        self.responses = [(0, {'metadata': metadata, 'ARecords': [{'ipv4Address': '192.0.2.2'}],
+                               'TTL': 60, 'etag': 'original-etag'}),
+                          (0, {'properties': {'metadata': metadata}})]
+        self.az.ensure_bastion_dns(self.s, '192.0.2.1')
+        self.assertIn('If-Match=original-etag', self.calls[1])
+        self.assertEqual(self.last_body['properties']['metadata'], metadata)
+        self.assertEqual(self.last_body['properties']['TTL'], 60)
+
+    def test_dns_without_ownership_is_never_adopted(self):
+        self.s.update(sandbox_group='sandbox', dns_zone='test.example.com')
+        for metadata in (None, {}, {'agnosticd_project': 'other-project'}):
+            with self.subTest(metadata=metadata):
+                self.calls.clear()
+                self.responses = [(0, {'metadata': metadata, 'ARecords': [{'ipv4Address': '192.0.2.1'}]})]
+                with self.assertRaisesRegex(provider.AzureError, 'unowned'):
+                    self.az.ensure_bastion_dns(self.s, '192.0.2.1')
+                self.assertEqual(len(self.calls), 1)
+
+    def test_dns_conflict_is_not_retried_as_an_unconditional_write(self):
+        self.s.update(sandbox_group='sandbox', dns_zone='test.example.com')
+        self.responses = [(1, 'NotFound'), (1, 'ERROR: (PreconditionFailed) Record changed concurrently.')]
+        with self.assertRaisesRegex(provider.AzureError, 'PreconditionFailed'):
+            self.az.ensure_bastion_dns(self.s, '192.0.2.1')
+        self.assertEqual(len(self.calls), 2)
+
+    def test_dns_missing_ownership_in_response_is_reported(self):
+        self.s.update(sandbox_group='sandbox', dns_zone='test.example.com')
+        self.responses = [(1, 'NotFound'), (0, {'properties': {'ARecords': [{'ipv4Address': '192.0.2.1'}]}})]
+        with self.assertRaisesRegex(provider.AzureError, 'ownership metadata'):
+            self.az.ensure_bastion_dns(self.s, '192.0.2.1')
 
     def test_owned_group_can_be_deleted(self):
         self.responses = [(0, {'tags': {'agnosticd_project': 'project'}}), (0, None)]

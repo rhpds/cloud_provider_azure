@@ -96,6 +96,11 @@ override `azure_infra_resource_group` and `azure_cluster_resource_group` before
 provisioning. They must differ from each other and from the sandbox group.
 Existing groups must carry `agnosticd_project: <project_tag>`; unowned groups and
 DNS records are refused. The DNS record `bastion` uses the same ownership metadata.
+DNS addresses and ownership metadata are written together using a conditional ARM
+request. Ready records are reused without another write. Earlier versions used
+CLI `add-record`, which can discard metadata; those existing records require an
+operator-approved metadata repair after verifying their IP and deployment ownership.
+The provider does not automatically adopt records with missing ownership metadata.
 IPI takes ownership of its initially empty cluster group and deletes it through
 `openshift-install destroy cluster`. ARO has a separate Azure-managed resource
 group, deleted through the ARO API; the provider never powers its VMs directly.
