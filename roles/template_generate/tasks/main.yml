@@ -1,0 +1,4 @@
+---
+- name: Render ARM template
+  ansible.builtin.set_fact:
+    azure_arm_template: "{{ lookup('ansible.builtin.template', 'bastion.json.j2') | from_json }}"

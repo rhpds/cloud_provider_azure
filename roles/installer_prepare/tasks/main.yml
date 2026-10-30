@@ -1,0 +1,8 @@
+---
+- name: Create or verify owned empty installer resource group
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: installer_prepare
+    auth: "{{ azure_auth }}"
+    settings: "{{ azure_settings }}"
+    config_dir: "{{ azure_cli_config_dir }}"
+    project: "{{ project_tag }}"

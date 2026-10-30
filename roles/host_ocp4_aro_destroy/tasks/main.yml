@@ -1,0 +1,9 @@
+---
+- name: Delete ARO and its owned infrastructure from controller
+  delegate_to: localhost
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: aro_destroy
+    auth: "{{ hostvars.localhost.azure_auth }}"
+    settings: "{{ hostvars.localhost.azure_settings }}"
+    config_dir: "{{ hostvars.localhost.azure_cli_config_dir }}"
+    project: "{{ project_tag }}"

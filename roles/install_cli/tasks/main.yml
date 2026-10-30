@@ -1,0 +1,19 @@
+---
+- name: Add Microsoft signing key
+  become: true
+  ansible.builtin.rpm_key:
+    key: https://packages.microsoft.com/keys/microsoft.asc
+    state: present
+- name: Configure Azure CLI repository
+  become: true
+  ansible.builtin.yum_repository:
+    name: azure-cli
+    description: Microsoft Azure CLI
+    baseurl: https://packages.microsoft.com/yumrepos/azure-cli
+    gpgcheck: true
+    gpgkey: https://packages.microsoft.com/keys/microsoft.asc
+- name: Install pinned Azure CLI
+  become: true
+  ansible.builtin.dnf:
+    name: "azure-cli-{{ azure_cli_version }}"
+    state: present

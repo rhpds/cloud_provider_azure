@@ -1,0 +1,125 @@
+# AgnosticD Azure provider
+
+Collection namespace: `agnosticd.cloud_provider_azure`. This collection supports
+new v2 deployments: a Linux bastion, self-managed Azure OpenShift IPI and standard
+architecture ARO. The `cloud_provider_azure_codex_try1` prototype is not used.
+
+## Sandbox contract
+
+The sandbox owns subscription allocation/release, the existing resource group,
+and the delegated DNS zone. Supply exactly one credential entry:
+
+```yaml
+azure_sandbox:
+  credentials:
+  - subscription_id: <subscription UUID>
+    app_id: <service principal application UUID>
+    password: <secret>
+    tenant: redhat0.onmicrosoft.com
+    resource_group: openenv-example
+    azure_region: eastus
+    # pool_subscription, azure_account and sandbox id are optional metadata.
+```
+
+The existing zone defaults to `<guid>.azure.redhatworkshops.io` in the sandbox
+resource group. Override `azure_root_dns_zone` or `azure_dns_zone` as appropriate.
+The sandbox must delegate this zone from its parent. No parent-zone credentials
+are needed. Credentials are never obtained from ambient CLI sessions.
+
+Use subscription Owner or equivalent permissions for resource/provider creation,
+resource-group deletion and role assignments. ARO service-principal mode also
+needs directory read access to resolve the supplied principal and ARO resource
+provider principal. This provider never allocates subscriptions or creates tenant
+applications. Managed identities are created by Azure CLI in the owned cluster
+resource group. An existing ARO resource-provider identity is a tenant prerequisite.
+
+## Installation
+
+Use `config: openshift-cluster` and `cloud_provider: azure` in v2.
+
+```yaml
+host_ocp4_deploy_installation_method: openshift_install
+ocp4_pull_secret: <Red Hat pull secret>
+host_ocp4_installer_version: '4.20'
+```
+
+Or:
+
+```yaml
+host_ocp4_deploy_installation_method: aro
+aro_version: <exact version from az aro get-versions --location eastus>
+aro_identity_mode: managed_identity  # alternatively service_principal
+```
+
+ARO uses public API/ingress and Azure-managed endpoint DNS. Its pull secret is
+optional. Defaults are three workers, D8s_v3 control plane, D4s_v3 workers and
+128 GiB worker disks. Override `aro_master_vm_size`, `aro_worker_vm_size`,
+`aro_worker_count`, `aro_worker_disk_size`, `aro_vnet_cidr`,
+`aro_master_subnet_cidr`, `aro_worker_subnet_cidr`, `aro_pod_cidr`, and
+`aro_service_cidr`. ARO deployment checks region/version, provider registrations,
+VM SKU restrictions and regional/family core quotas, allowing an extra control
+plane-sized bootstrap VM. Azure CLI validates ARO permissions during creation.
+Failed clusters require diagnosis and explicit destruction before recreation.
+
+The bastion defaults to Azure user `azure`, PAYG RHEL 9, Standard_D2s_v5 and a
+64 GiB Premium disk. Configure `azure_bastion_user`, `azure_bastion_vm_size`, and
+`azure_bastion_ssh_source` (default `*`). Its SSH key comes from v2's existing
+provision-key role. A Standard static IP and SSH-only NSG supply access.
+Marketplace availability and RHEL subscription/repository configuration remain
+prerequisites, following the normal v2 bastion roles.
+
+## Ownership and cleanup
+
+Default owned groups are `<config>-<guid>-infra` and `<config>-<guid>-cluster`;
+override `azure_infra_resource_group` and `azure_cluster_resource_group` before
+provisioning. They must differ from each other and from the sandbox group.
+Existing groups must carry `agnosticd_project: <project_tag>`; unowned groups and
+DNS records are refused. The DNS record `bastion` uses the same ownership metadata.
+IPI takes ownership of its initially empty cluster group and deletes it through
+`openshift-install destroy cluster`. ARO has a separate Azure-managed resource
+group, deleted through the ARO API; the provider never powers its VMs directly.
+
+Destroy runs workload cleanup, deletes the cluster, then removes its owned
+identities/network and bastion infrastructure. Failures stop cleanup before the
+bastion is deleted. The sandbox group, zone, parent delegation and supplied
+service principal are preserved. Already absent resources are handled idempotently.
+
+Restore the original variables and v2 output archive for lifecycle/destroy jobs.
+The archive contains SSH keys, installer artifacts and
+`<config>_<guid>_azure_ownership.json` with subscription, exact group IDs and DNS
+ownership. Changed settings or subscription mismatches are refused. If a bastion
+and its IPI state have been lost, recover the installer state before destruction;
+the provider intentionally refuses to delete a remaining IPI group blindly.
+Do not put unrelated resources in deployment-owned groups.
+
+`start`, `stop`, and `status` apply to the bastion and self-managed cluster VMs.
+For ARO they report cluster status but only start/deallocate the bastion.
+Status is written to `output_dir/status.txt`. Kubeconfig and access facts follow
+the standard v2 contract, including `<config>_<guid>_kubeconfig` on the controller.
+
+## Runtime and verification
+
+Controller and RHEL bastion use Azure CLI 2.90.0. The existing v2 public execution
+environment Containerfile pins that version; rebuild the EE before use. No ARO
+preview extension, Bicep or Azure Python SDK is needed by this collection: its
+module uses CLI JSON and Python's standard library. Collection dependencies are
+declared in `galaxy.yml`; v2 supplies `agnosticd.core` and shared host roles.
+
+Run `python -m unittest discover -s tests/unit -v`, `ansible-galaxy collection
+build`, and `ansible-lint --offline` from this collection. The offline integration
+playbook is `tests/integration/provider.yml`; run it with
+`python tests/integration/run.py` using a Python environment with ansible-core.
+The runner creates an isolated collection path and fresh state/output directories,
+prepends the fake CLI to PATH, and also validates the v2 installer template when
+this collection is next to the v2 checkout. It never calls Azure; all credentials
+in the fixture are synthetic.
+
+Before release, run live Azure IPI and both ARO identity-mode deployments,
+reruns, workload access, lifecycle actions, destruction and repeated destruction.
+Verify preservation of sandbox/unrelated resources and removal of owned groups,
+identities and role assignments. Offline tests do not prove quota, marketplace,
+Azure policy, ARM API or runtime-image compatibility.
+
+References: [Microsoft ARO creation](https://learn.microsoft.com/en-us/azure/openshift/howto-create-openshift-cluster),
+[ARO CLI](https://learn.microsoft.com/en-us/cli/azure/aro),
+[Red Hat Azure installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html-single/installing_on_azure/installing_on_azure).

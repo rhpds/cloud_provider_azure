@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Stateful fake Azure CLI for role/module integration tests. Never calls Azure."""
+import json
+import os
+from pathlib import Path
+import sys
+args = sys.argv[1:]
+p = Path(os.environ['AZURE_TEST_STATE'])
+s = json.loads(p.read_text()) if p.exists() else {'groups': {}, 'cluster': None, 'record': None}
+def value(flag, default=None):
+    return args[args.index(flag)+1] if flag in args else default
+
+def missing():
+    print('ResourceNotFound', file=sys.stderr)
+    sys.exit(3)
+
+def answer(obj):
+    p.write_text(json.dumps(s))
+    print(json.dumps(obj))
+    sys.exit()
+
+if args[0] == 'login': answer([])
+if args[:2] == ['provider', 'show']: answer({'registrationState': 'Registered'})
+if args[:2] == ['group', 'show']:
+    name = value('--name', value('-n'))
+    if name == 'sandbox': answer({'location': 'eastus'})
+    if name not in s['groups']: missing()
+    answer(s['groups'][name])
+if args[:2] == ['group', 'create']:
+    name=value('--name')
+    s['groups'][name]={'name': name, 'tags': {'agnosticd_project': 'openshift-cluster-test'}}
+    answer(s['groups'][name])
+if args[:2] == ['group', 'delete']:
+    del s['groups'][value('--name')]
+    answer(None)
+if args[:4] == ['network', 'dns', 'zone', 'show']: answer({'name': 'test.azure.redhatworkshops.io'})
+if args[:4] == ['network', 'dns', 'record-set', 'a']:
+    operation = args[4]
+    if operation == 'show':
+        if s['record'] is None: missing()
+        answer(s['record'])
+    if operation == 'create': s['record'] = {'metadata': {'agnosticd_project': 'openshift-cluster-test'}}
+    if operation == 'delete': s['record'] = None
+    answer(s['record'])
+if args[:3] == ['deployment', 'group', 'show']:
+    if not s.get('deployed'): missing()
+    answer({'properties': {'provisioningState': 'Succeeded'}})
+if args[:3] == ['deployment', 'group', 'create']:
+    template=json.loads(Path(value('--template-file')).read_text())
+    vm=template['resources'][-1]
+    assert vm['properties']['osProfile']['linuxConfiguration']['ssh']['publicKeys'][0]['keyData'].startswith('ssh-rsa')
+    s['deployed']=True
+    answer({})
+if args[:2] == ['vm', 'list']: answer([{'name': 'bastion-test', 'id': '/bastion', 'tags': {'agnosticd_project': 'openshift-cluster-test'}, 'publicIps': '192.0.2.1', 'privateIps': '10.240.0.4'}])
+if args[:2] in (['vm', 'start'], ['vm', 'deallocate']): answer(None)
+if args[:2] == ['vm', 'list-skus']:
+    answer([{'name': name, 'family': 'standardDSv3Family', 'restrictions': [], 'capabilities': [{'name': 'vCPUs', 'value': cores}]} for name,cores in [('Standard_D8s_v3','8'),('Standard_D4s_v3','4')]])
+if args[:2] == ['vm', 'list-usage']: answer([{'name': {'value': name}, 'limit': 1000, 'currentValue': 0} for name in ['cores','standardDSv3Family']])
+if args[:2] == ['aro', 'get-versions']: answer(['4.20.1'])
+if args[:2] == ['aro', 'show']:
+    if s['cluster'] is None: missing()
+    answer(s['cluster'])
+if args[:2] == ['aro', 'create']:
+    if '--pull-secret' in args:
+        assert json.loads(Path(value('--pull-secret')).read_text()) == {'auths': {}}
+    assert '--enable-managed-identity' in args or ('--client-id' in args and '--client-secret' in args)
+    s['cluster']={'provisioningState': 'Succeeded', 'apiserverProfile': {'url': 'https://api.example.test:6443'}}
+    answer(s['cluster'])
+if args[:2] == ['aro', 'delete']:
+    s['cluster']=None
+    answer(None)
+if args[:2] == ['aro', 'list-credentials']: answer({'kubeadminUsername': 'kubeadmin', 'kubeadminPassword': 'synthetic'})
+if args[:3] in (['network', 'vnet', 'create'], ['network','vnet','subnet']): answer({})
+print('Unhandled fake CLI operation: ' + repr(args), file=sys.stderr)
+sys.exit(2)

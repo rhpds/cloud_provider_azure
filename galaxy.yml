@@ -1,0 +1,13 @@
+namespace: agnosticd
+name: cloud_provider_azure
+version: 1.0.0
+readme: README.md
+authors: [AgnosticD contributors]
+description: Azure bastion and OpenShift cluster lifecycle for AgnosticD v2
+license: [GPL-3.0-or-later]
+tags: [cloud, azure, openshift]
+dependencies:
+  ansible.posix: '>=1.5.0'
+  community.crypto: '>=2.0.0'
+build_ignore: [tests, '*.tar.gz', __pycache__]
+repository: https://github.com/rhpds/cloud_provider_azure

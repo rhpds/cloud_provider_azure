@@ -1,0 +1,97 @@
+---
+- name: Validate sandbox payload
+  ansible.builtin.assert:
+    that:
+    - azure_sandbox.credentials | default([]) | length == 1
+    - guid is defined and guid != 'notset'
+    - host_ocp4_deploy_installation_method | default('openshift_install') in ['aro', 'openshift_install']
+    - aro_identity_mode in ['managed_identity', 'service_principal']
+    fail_msg: A single Azure sandbox credential and a supported installation method are required
+
+- name: Normalize sandbox authentication
+  ansible.builtin.set_fact:
+    azure_auth: "{{ azure_sandbox.credentials[0] }}"
+  no_log: true
+
+- name: Validate required sandbox fields
+  ansible.builtin.assert:
+    that: azure_auth[item] | default('') | string | length > 0
+    fail_msg: "Missing sandbox field {{ item }}"
+  loop: [subscription_id, app_id, password, tenant, resource_group, azure_region]
+
+- name: Set provider settings
+  ansible.builtin.set_fact:
+    azure_region: "{{ azure_auth.azure_region }}"
+    azure_subscription: "{{ azure_auth.subscription_id }}"
+    azure_subscription_id: "{{ azure_auth.subscription_id }}"
+    azure_service_principal_id: "{{ azure_auth.app_id }}"
+    azure_service_principal: "{{ azure_auth.app_id }}"
+    azure_service_principal_password: "{{ azure_auth.password }}"
+    azure_password: "{{ azure_auth.password }}"
+    azure_tenant: "{{ azure_auth.tenant }}"
+    az_dnszone_resource_group: "{{ azure_auth.resource_group }}"
+    azure_cli_config_dir: "{{ output_dir }}/.azure-{{ config }}-{{ guid }}"
+    azure_settings:
+      sandbox_group: "{{ azure_auth.resource_group }}"
+      region: "{{ azure_auth.azure_region }}"
+      infra_group: "{{ azure_infra_resource_group }}"
+      cluster_group: "{{ azure_cluster_resource_group }}"
+      cluster_name: "{{ aro_cluster_name }}"
+      dns_zone: "{{ azure_dns_zone }}"
+      method: "{{ host_ocp4_deploy_installation_method | default('openshift_install') }}"
+      identity_mode: "{{ aro_identity_mode }}"
+      version: "{{ aro_version }}"
+      master_size: "{{ aro_master_vm_size }}"
+      worker_size: "{{ aro_worker_vm_size }}"
+      worker_count: "{{ aro_worker_count | int }}"
+      worker_disk: "{{ aro_worker_disk_size | int }}"
+      vnet_cidr: "{{ aro_vnet_cidr }}"
+      master_cidr: "{{ aro_master_subnet_cidr }}"
+      worker_cidr: "{{ aro_worker_subnet_cidr }}"
+      pod_cidr: "{{ aro_pod_cidr }}"
+      service_cidr: "{{ aro_service_cidr }}"
+  no_log: true
+
+- name: Locate archived ownership record
+  ansible.builtin.stat:
+    path: "{{ output_dir }}/{{ config }}_{{ guid }}_azure_ownership.json"
+  register: azure_ownership_stat
+
+- name: Load archived ownership record
+  when: azure_ownership_stat.stat.exists
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/{{ config }}_{{ guid }}_azure_ownership.json"
+  register: azure_ownership_slurp
+
+- name: Validate archived ownership
+  when: azure_ownership_stat.stat.exists
+  vars:
+    saved: "{{ azure_ownership_slurp.content | b64decode | from_json }}"
+  ansible.builtin.assert:
+    that:
+    - saved.subscription_id == azure_auth.subscription_id
+    - saved.project == project_tag
+    - saved.settings == azure_settings
+    fail_msg: Deployment settings differ from archived ownership; restore original settings before continuing
+
+- name: Record ownership boundaries for later lifecycle and destroy jobs
+  ansible.builtin.copy:
+    content: >-
+      {{ {'subscription_id': azure_auth.subscription_id, 'project': project_tag,
+          'settings': azure_settings,
+          'resource_group_ids': [
+            '/subscriptions/' ~ azure_auth.subscription_id ~ '/resourceGroups/' ~ azure_settings.infra_group,
+            '/subscriptions/' ~ azure_auth.subscription_id ~ '/resourceGroups/' ~ azure_settings.cluster_group,
+            '/subscriptions/' ~ azure_auth.subscription_id ~ '/resourceGroups/' ~ azure_settings.cluster_group ~ '-managed'],
+          'dns_record': {'zone': azure_settings.dns_zone, 'group': azure_settings.sandbox_group, 'name': 'bastion', 'type': 'A'}
+         } | to_nice_json }}
+    dest: "{{ output_dir }}/{{ config }}_{{ guid }}_azure_ownership.json"
+    mode: '0600'
+
+- name: Verify sandbox resource group and delegated zone
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: validate
+    auth: "{{ azure_auth }}"
+    settings: "{{ azure_settings }}"
+    config_dir: "{{ azure_cli_config_dir }}"
+    project: "{{ project_tag }}"

@@ -1,0 +1,116 @@
+---
+- name: Exercise collection roles and module with a stateful fake CLI
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    config: openshift-cluster
+    guid: test
+    project_tag: openshift-cluster-test
+    host_ocp4_deploy_installation_method: aro
+    aro_version: 4.20.1
+    ocp4_pull_secret: '{"auths": {}}'
+    azure_bastion_user: azure
+    azure_bastion_vm_size: Standard_D2s_v5
+    azure_bastion_ssh_source: '*'
+    ssh_provision_pubkey_content: ssh-rsa synthetic-test-key
+    azure_sandbox:
+      credentials:
+      - subscription_id: synthetic-subscription
+        app_id: synthetic-app
+        password: synthetic-password
+        tenant: synthetic-tenant
+        resource_group: sandbox
+        azure_region: eastus
+  tasks:
+  - name: Initialize
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.initialize
+  - name: Render Azure installer platform
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.installer_platform
+    vars:
+      control_plane_instance_type: Standard_D8s_v3
+      worker_instance_type: Standard_D4s_v3
+  - name: Verify installer platform ownership and DNS contract
+    ansible.builtin.assert:
+      that:
+      - (host_ocp4_installer_platform_fragment | from_yaml).azure.resourceGroupName == azure_settings.cluster_group
+      - (host_ocp4_installer_platform_fragment | from_yaml).azure.baseDomainResourceGroupName == 'sandbox'
+      - (host_ocp4_installer_control_plane_platform_fragment | from_yaml).azure.type == 'Standard_D8s_v3'
+  - name: Render full installer configuration
+    when: v2_install_config_template is defined
+    vars:
+      cloud_provider: azure
+      cluster_name: ocp-test
+      cluster_dns_zone: test.azure.redhatworkshops.io
+      host_ocp4_installer_fips_enable: false
+      host_ocp4_installer_architecture_cluster: x86_64
+      control_plane_instance_count: 3
+      worker_instance_count: 3
+      ocp4_pull_secret: synthetic
+      idrsapub:
+        content: "{{ 'ssh-rsa synthetic' | b64encode }}"
+    ansible.builtin.set_fact:
+      integration_install_config: "{{ lookup('ansible.builtin.template', v2_install_config_template) | from_yaml }}"
+  - name: Verify rendered installer configuration
+    when: v2_install_config_template is defined
+    ansible.builtin.assert:
+      that:
+      - integration_install_config.platform.azure.resourceGroupName == azure_settings.cluster_group
+      - integration_install_config.controlPlane.platform.azure.type == 'Standard_D8s_v3'
+      - integration_install_config.compute[0].platform.azure.type == 'Standard_D4s_v3'
+  - name: Render ARM template
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.template_generate
+  - name: Provision infrastructure
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.template_create
+  - name: Retry provision
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.template_create
+  - name: Confirm provision is reused
+    ansible.builtin.assert:
+      that: not azure_result.changed
+  - name: Discover inventory
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.create_inventory
+  - name: Verify bastion group
+    ansible.builtin.assert:
+      that: groups.bastions == ['bastion-test']
+  - name: Exercise both ARO identity modes
+    agnosticd.cloud_provider_azure.azure_environment:
+      action: aro_install
+      auth: "{{ azure_auth }}"
+      settings: "{{ azure_settings | combine({'identity_mode': item, 'pull_secret': ocp4_pull_secret}) }}"
+      config_dir: "{{ azure_cli_config_dir }}"
+      project: "{{ project_tag }}"
+    loop: [managed_identity, service_principal]
+    register: aro_install_results
+  - name: Verify ready cluster reuse
+    ansible.builtin.assert:
+      that:
+      - aro_install_results.results[0].changed
+      - not aro_install_results.results[1].changed
+  - name: Destroy ARO
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.host_ocp4_aro_destroy
+  - name: Create service principal ARO
+    agnosticd.cloud_provider_azure.azure_environment:
+      action: aro_install
+      auth: "{{ azure_auth }}"
+      settings: "{{ azure_settings | combine({'identity_mode': 'service_principal'}) }}"
+      config_dir: "{{ azure_cli_config_dir }}"
+      project: "{{ project_tag }}"
+  - name: Destroy ARO again
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.host_ocp4_aro_destroy
+  - name: Destroy infrastructure
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.template_destroy
+  - name: Repeat infrastructure destroy
+    ansible.builtin.include_role:
+      name: agnosticd.cloud_provider_azure.template_destroy
+  - name: Verify repeated destruction
+    ansible.builtin.assert:
+      that: not azure_result.changed

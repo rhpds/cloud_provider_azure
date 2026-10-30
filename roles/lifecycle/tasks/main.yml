@@ -1,0 +1,17 @@
+---
+- name: Initialize Azure provider
+  ansible.builtin.include_role:
+    name: agnosticd.cloud_provider_azure.initialize
+- name: Apply Azure lifecycle action
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: "{{ ACTION }}"
+    auth: "{{ azure_auth }}"
+    settings: "{{ azure_settings }}"
+    config_dir: "{{ azure_cli_config_dir }}"
+    project: "{{ project_tag }}"
+  register: azure_lifecycle_result
+- name: Save lifecycle status
+  ansible.builtin.copy:
+    content: "{{ azure_lifecycle_result | to_nice_json }}"
+    dest: "{{ output_dir }}/status.txt"
+    mode: '0600'

@@ -1,0 +1,24 @@
+---
+- name: Run Azure inventory
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: inventory
+    auth: "{{ hostvars.localhost.azure_auth }}"
+    settings: "{{ hostvars.localhost.azure_settings }}"
+    config_dir: "{{ hostvars.localhost.azure_cli_config_dir }}"
+    project: "{{ project_tag }}"
+  register: azure_result
+
+- name: Add bastion to inventory
+  ansible.builtin.add_host:
+    name: "{{ item.name }}"
+    groups: [bastions]
+    ansible_host: "{{ item.publicIps }}"
+    public_ip_address: "{{ item.publicIps }}"
+    public_dns_name: "bastion.{{ azure_settings.dns_zone }}"
+    private_ip_address: "{{ item.privateIps }}"
+    ansible_user: "{{ azure_bastion_user | default('azure') }}"
+    cloud_user: "{{ azure_bastion_user | default('azure') }}"
+    instance_canonical_name: bastion
+    shortname: bastion
+    isolated: false
+  loop: "{{ azure_result.vms }}"

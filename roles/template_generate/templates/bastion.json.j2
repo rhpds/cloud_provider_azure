@@ -1,0 +1,159 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2023-09-01",
+      "name": "bastion-nsg",
+      "location": "{{ azure_region }}",
+      "tags": {
+        "agnosticd_project": "{{ project_tag }}"
+      },
+      "properties": {
+        "securityRules": [
+          {
+            "name": "ssh",
+            "properties": {
+              "priority": 100,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "{{ azure_bastion_ssh_source }}",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "22"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-09-01",
+      "name": "bastion-vnet",
+      "location": "{{ azure_region }}",
+      "tags": {
+        "agnosticd_project": "{{ project_tag }}"
+      },
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.240.0.0/24"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "bastion",
+            "properties": {
+              "addressPrefix": "10.240.0.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2023-09-01",
+      "name": "bastion-pip",
+      "location": "{{ azure_region }}",
+      "tags": {
+        "agnosticd_project": "{{ project_tag }}"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static"
+      },
+      "sku": {
+        "name": "Standard"
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "apiVersion": "2023-09-01",
+      "name": "bastion-nic",
+      "location": "{{ azure_region }}",
+      "tags": {
+        "agnosticd_project": "{{ project_tag }}"
+      },
+      "properties": {
+        "networkSecurityGroup": {
+          "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'bastion-nsg')]"
+        },
+        "ipConfigurations": [
+          {
+            "name": "primary",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'bastion-vnet', 'bastion')]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'bastion-pip')]"
+              }
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', 'bastion-vnet')]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', 'bastion-nsg')]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', 'bastion-pip')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "apiVersion": "2024-03-01",
+      "name": "bastion-{{ guid }}",
+      "location": "{{ azure_region }}",
+      "tags": {
+        "agnosticd_project": "{{ project_tag }}",
+        "AnsibleGroup": "bastions"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkInterfaces', 'bastion-nic')]"
+      ],
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "{{ azure_bastion_vm_size }}"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "RedHat",
+            "offer": "RHEL",
+            "sku": "9-lvm-gen2",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage",
+            "diskSizeGB": 64,
+            "managedDisk": {
+              "storageAccountType": "Premium_LRS"
+            }
+          }
+        },
+        "osProfile": {
+          "computerName": "bastion-{{ guid }}",
+          "adminUsername": "{{ azure_bastion_user }}",
+          "linuxConfiguration": {
+            "disablePasswordAuthentication": true,
+            "ssh": {
+              "publicKeys": [
+                {
+                  "path": "/home/{{ azure_bastion_user }}/.ssh/authorized_keys",
+                  "keyData": {{ ssh_provision_pubkey_content | to_json }}
+                }
+              ]
+            }
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', 'bastion-nic')]"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+---
+- name: Run Azure destroy
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: destroy
+    auth: "{{ hostvars.localhost.azure_auth }}"
+    settings: "{{ hostvars.localhost.azure_settings }}"
+    config_dir: "{{ hostvars.localhost.azure_cli_config_dir }}"
+    project: "{{ project_tag }}"
+  register: azure_result

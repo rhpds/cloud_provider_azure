@@ -1,0 +1,5 @@
+  azure:
+    region: {{ hostvars.localhost.azure_settings.region | to_json }}
+    baseDomainResourceGroupName: {{ hostvars.localhost.azure_settings.sandbox_group | to_json }}
+    resourceGroupName: {{ hostvars.localhost.azure_settings.cluster_group | to_json }}
+    userTags: {{ (hostvars.localhost.cloud_tags_final | default({}) | combine({'agnosticd_project': project_tag})) | to_json }}

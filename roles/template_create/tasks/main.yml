@@ -1,0 +1,10 @@
+---
+- name: Run Azure provision
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: provision
+    auth: "{{ hostvars.localhost.azure_auth }}"
+    settings: "{{ hostvars.localhost.azure_settings }}"
+    config_dir: "{{ hostvars.localhost.azure_cli_config_dir }}"
+    project: "{{ project_tag }}"
+    template: "{{ azure_arm_template }}"
+  register: azure_result

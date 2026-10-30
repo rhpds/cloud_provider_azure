@@ -1,0 +1,17 @@
+---
+azure_root_dns_zone: azure.redhatworkshops.io
+azure_dns_zone: "{{ guid }}.{{ azure_root_dns_zone }}"
+azure_infra_resource_group: "{{ config }}-{{ guid }}-infra"
+azure_cluster_resource_group: "{{ config }}-{{ guid }}-cluster"
+aro_cluster_name: "aro-{{ guid }}"
+aro_identity_mode: managed_identity
+aro_version: ""
+aro_master_vm_size: Standard_D8s_v3
+aro_worker_vm_size: Standard_D4s_v3
+aro_worker_count: 3
+aro_worker_disk_size: 128
+aro_vnet_cidr: 10.0.0.0/22
+aro_master_subnet_cidr: 10.0.0.0/23
+aro_worker_subnet_cidr: 10.0.2.0/23
+aro_pod_cidr: 10.128.0.0/14
+aro_service_cidr: 172.30.0.0/16

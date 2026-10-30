@@ -1,0 +1,8 @@
+---
+profile: production
+skip_list:
+# Shared provider facts and public v1-compatible input names follow the AWS collection convention.
+- var-naming[no-role-prefix]
+- var-naming[pattern]
+mock_modules:
+- agnosticd.core.agnosticd_user_info
