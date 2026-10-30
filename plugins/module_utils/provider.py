@@ -126,6 +126,15 @@ class Azure:
             time.sleep(30)
         raise AzureError('Timed out waiting for ARO provisioning')
 
+    def check_aro_size_change(self, settings):
+        if self.group(settings['cluster_group'], settings['region']):
+            cluster = self.call('aro', 'show', '-g', settings['cluster_group'],
+                                '-n', settings['cluster_name'], missing=True)
+            if cluster is not None:
+                raise AzureError('ARO node sizes can change only before cluster creation; '
+                                 'set aro_master_vm_size and aro_worker_vm_size to their recorded values '
+                                 'for an existing cluster')
+
     def preflight(self, s):
         for provider in ('Microsoft.Compute', 'Microsoft.Storage', 'Microsoft.Network',
                          'Microsoft.Authorization', 'Microsoft.ManagedIdentity', 'Microsoft.RedHatOpenShift'):

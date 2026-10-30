@@ -6,8 +6,8 @@ azure_cluster_resource_group: "{{ config }}-{{ guid }}-cluster"
 aro_cluster_name: "aro-{{ guid }}"
 aro_identity_mode: managed_identity
 aro_version: ""
-aro_master_vm_size: Standard_D8s_v3
-aro_worker_vm_size: Standard_D4s_v3
+aro_master_vm_size: Standard_D8s_v6
+aro_worker_vm_size: Standard_D4s_v6
 aro_worker_count: 3
 aro_worker_disk_size: 128
 aro_vnet_cidr: 10.0.0.0/22

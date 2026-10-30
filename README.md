@@ -72,8 +72,10 @@ aro_version: <exact version from az aro get-versions --location eastus>
 aro_identity_mode: managed_identity  # alternatively service_principal
 ```
 
+Dsv6 node sizes require ARO 4.19 or newer.
+
 ARO uses public API/ingress and Azure-managed endpoint DNS. Its pull secret is
-optional. Defaults are three workers, D8s_v3 control plane, D4s_v3 workers and
+optional. Defaults are three workers, D8s_v6 control plane, D4s_v6 workers and
 128 GiB worker disks. Override `aro_master_vm_size`, `aro_worker_vm_size`,
 `aro_worker_count`, `aro_worker_disk_size`, `aro_vnet_cidr`,
 `aro_master_subnet_cidr`, `aro_worker_subnet_cidr`, `aro_pod_cidr`, and
@@ -131,7 +133,10 @@ service principal are preserved. Already absent resources are handled idempotent
 Restore the original variables and v2 output archive for lifecycle/destroy jobs.
 The archive contains SSH keys, installer artifacts and
 `<config>_<guid>_azure_ownership.json` with subscription, exact group IDs and DNS
-ownership. Changed settings or subscription mismatches are refused. If a bastion
+ownership. Changed ownership settings or subscription mismatches are refused. ARO control-plane
+and worker VM sizes may change before cluster creation after a read-only absence
+check; existing clusters keep their recorded sizes for lifecycle/destroy. Provision
+runs reject attempts to change sizes of an existing cluster. If a bastion
 and its IPI state have been lost, recover the installer state before destruction;
 the provider intentionally refuses to delete a remaining IPI group blindly.
 Do not put unrelated resources in deployment-owned groups.

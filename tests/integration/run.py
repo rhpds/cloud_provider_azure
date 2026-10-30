@@ -41,6 +41,42 @@ def main():
                     azure_service_principal_password='synthetic-password', azure_tenant='synthetic-tenant',
                     azure_resource_group='sandbox', azure_region='eastus',
                     azure_dns_zone='test.azure.redhatworkshops.io')
+        ownership_file = output / 'openshift-cluster_test_azure_ownership.json'
+        legacy = json.loads(ownership_file.read_text())
+        legacy['settings'].update(master_size='Standard_D8s_v3', worker_size='Standard_D4s_v3')
+        state_file = Path(env['AZURE_TEST_STATE'])
+        original_state = state_file.read_text()
+        size_cases = [
+            ('before-cluster', {}, False, True),
+            ('existing-cluster', {}, True, False),
+            ('status-preserves-sizes', dict(ACTION='status', expected_master_size='Standard_D8s_v3',
+                                            expected_worker_size='Standard_D4s_v3'), True, True),
+            ('ownership-boundary', dict(azure_infra_resource_group='different-infra'), False, False),
+        ]
+        for name, overrides, cluster_exists, expected_success in size_cases:
+            ownership_file.write_text(json.dumps(legacy))
+            state = json.loads(original_state)
+            if cluster_exists:
+                group = legacy['settings']['cluster_group']
+                state['groups'][group] = {'tags': {'agnosticd_project': 'openshift-cluster-test'}}
+                state['cluster'] = {'provisioningState': 'Succeeded'}
+            state_file.write_text(json.dumps(state))
+            variables = dict(flat, output_dir=str(output), ansible_python_interpreter=sys.executable, **overrides)
+            variables_file = root / ('sizing-' + name + '.json')
+            variables_file.write_text(json.dumps(variables))
+            size_result = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook',
+                                          str(collection / 'tests/integration/initialize.yml'),
+                                          '-e', '@' + str(variables_file)],
+                                         cwd=collection, env=env, text=True, capture_output=True, check=False)
+            saved = json.loads(ownership_file.read_text())
+            if ((size_result.returncode == 0) != expected_success
+                    or saved['resource_group_ids'] != legacy['resource_group_ids']
+                    or (not expected_success and saved != legacy)):
+                print('FAIL: ARO sizing case ' + name)
+                print(size_result.stdout + size_result.stderr)
+                return 1
+            print('PASS: ARO sizing case ' + name)
+        state_file.write_text(original_state)
         # Exercise the actual protected asynchronous task and its public error handler.
         install_tasks = yaml.safe_load((collection / 'roles/host_ocp4_aro_install/tasks/main.yml').read_text())
         create_task = next(task for task in install_tasks[0]['block'] if task['name'] == 'Create or reconnect to ARO cluster')
@@ -63,7 +99,7 @@ def main():
                    {'name': 'Capture the expected SKU rejection',
                     'block': [{'name': 'Run protected task', 'ansible.builtin.include_tasks': str(fragment)}],
                     'rescue': [{'name': 'Verify public failure details', 'ansible.builtin.assert': {'that': [
-                        "'Standard_D8s_v3' in ansible_failed_result.msg",
+                        "'Standard_D8s_v6' in ansible_failed_result.msg",
                         "'NotAvailableForSubscription' in ansible_failed_result.msg",
                         "'synthetic-password' not in ansible_failed_result.msg"]}},
                         {'name': 'Record expected failure', 'ansible.builtin.set_fact': {'failure_observed': True}}]},

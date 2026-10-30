@@ -27,7 +27,7 @@ options:
     description: Provider operation.
     type: str
     required: true
-    choices: [validate, installer_prepare, provision, inventory, destroy, aro_install, aro_destroy, start, stop, status]
+    choices: [validate, installer_prepare, provision, inventory, destroy, aro_check_sizes, aro_install, aro_destroy, start, stop, status]
   template:
     description: Rendered ARM deployment template.
     type: dict
@@ -81,6 +81,9 @@ def execute(az, action, s, template):
         return dict(vms=az.inventory(s))
     if action == 'aro_install':
         return az.aro_install(s)
+    if action == 'aro_check_sizes':
+        az.check_aro_size_change(s)
+        return {}
     if action == 'aro_destroy':
         az.aro_destroy(s)
         return {}
@@ -106,7 +109,7 @@ def main():
         auth=dict(type='dict', required=True, no_log=True), settings=dict(type='dict', required=True, no_log=True),
         config_dir=dict(type='path', required=True), project=dict(type='str', required=True),
         action=dict(type='str', required=True, choices=['validate', 'installer_prepare', 'provision', 'inventory', 'destroy',
-                    'aro_install', 'aro_destroy', 'start', 'stop', 'status']),
+                    'aro_check_sizes', 'aro_install', 'aro_destroy', 'start', 'stop', 'status']),
         template=dict(type='dict', default={})), supports_check_mode=False)
     p = module.params
     try:

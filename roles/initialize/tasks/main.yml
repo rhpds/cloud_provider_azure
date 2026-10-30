@@ -95,8 +95,34 @@
     that:
     - saved.subscription_id == azure_auth.subscription_id
     - saved.project == project_tag
-    - saved.settings == azure_settings
+    - >-
+      (saved.settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size']) | items2dict) ==
+      (azure_settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size']) | items2dict)
     fail_msg: Deployment settings differ from archived ownership; restore original settings before continuing
+
+- name: Preserve recorded ARO node sizes for lifecycle and destroy operations
+  when:
+  - azure_ownership_stat.stat.exists
+  - ACTION | default('provision') != 'provision' or azure_settings.method != 'aro'
+  vars:
+    saved: "{{ azure_ownership_slurp.content | b64decode | from_json }}"
+  ansible.builtin.set_fact:
+    azure_settings: "{{ azure_settings | combine({'master_size': saved.settings.master_size, 'worker_size': saved.settings.worker_size}) }}"
+
+- name: Verify ARO does not exist before accepting changed node sizes
+  when:
+  - azure_ownership_stat.stat.exists
+  - azure_settings.method == 'aro'
+  - ACTION | default('provision') == 'provision'
+  - saved.settings.master_size != azure_settings.master_size or saved.settings.worker_size != azure_settings.worker_size
+  vars:
+    saved: "{{ azure_ownership_slurp.content | b64decode | from_json }}"
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: aro_check_sizes
+    auth: "{{ azure_auth }}"
+    settings: "{{ azure_settings }}"
+    config_dir: "{{ azure_cli_config_dir }}"
+    project: "{{ project_tag }}"
 
 - name: Record ownership boundaries for later lifecycle and destroy jobs
   ansible.builtin.copy:

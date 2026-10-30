@@ -194,6 +194,23 @@ class ProviderTests(unittest.TestCase):
         self.az.aro_destroy(self.s)
         self.assertFalse(self.az.changed)
 
+    def test_aro_size_change_is_allowed_before_resource_group_exists(self):
+        self.responses = [(1, 'ResourceGroupNotFound')]
+        self.az.check_aro_size_change(self.s)
+        self.assertFalse(self.az.changed)
+
+    def test_aro_size_change_is_allowed_when_only_owned_group_exists(self):
+        self.responses = [(0, {'tags': {'agnosticd_project': 'project'}}), (1, 'ResourceNotFound')]
+        self.az.check_aro_size_change(self.s)
+        self.assertFalse(self.az.changed)
+        self.assertFalse(any('create' in x for x in self.calls))
+
+    def test_aro_size_change_is_refused_after_cluster_creation(self):
+        self.responses = [(0, {'tags': {'agnosticd_project': 'project'}}), (0, {'provisioningState': 'Succeeded'})]
+        with self.assertRaisesRegex(provider.AzureError, 'only before cluster creation'):
+            self.az.check_aro_size_change(self.s)
+        self.assertFalse(self.az.changed)
+
     def test_overlapping_aro_subnets_fail_before_resource_creation(self):
         self.s.update(vnet_cidr='10.0.0.0/22', master_cidr='10.0.0.0/23',
                       worker_cidr='10.0.0.0/23', pod_cidr='10.128.0.0/14', service_cidr='172.30.0.0/16')
