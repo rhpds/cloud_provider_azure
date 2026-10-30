@@ -32,6 +32,7 @@ def main():
         template = collection.parents[2] / 'agnosticd-v2/ansible/roles/host_ocp4_installer/templates/install-config.yaml.j2'
         if template.is_file():
             command += ['-e', 'v2_install_config_template=' + str(template)]
+            env['ANSIBLE_ROLES_PATH'] = str(template.parents[2]) + os.pathsep + env.get('ANSIBLE_ROLES_PATH', '')
         result = subprocess.run(command, env=env, cwd=collection, check=False)
         if result.returncode:
             return result.returncode

@@ -78,6 +78,32 @@
   - name: Verify bastion group
     ansible.builtin.assert:
       that: groups.bastions == ['bastion-test']
+  - name: Verify inventory selects the provision key through the shared SSH configuration
+    when: v2_install_config_template is defined
+    vars:
+      cloud_provider: azure
+      ansible_user: azure
+      ssh_provision_key_path: "{{ output_dir }}/synthetic-ssh-key"
+    block:
+    - name: Generate v2 SSH configuration
+      ansible.builtin.include_role:
+        name: infra_common_ssh_config_generate
+    - name: Resolve effective SSH settings for the Ansible connection target without connecting
+      ansible.builtin.command:
+        argv:
+        - ssh
+        - -G
+        - -F
+        - "{{ output_dir }}/{{ config }}_{{ guid }}_ssh_conf"
+        - "{{ hostvars['bastion-test'].ansible_host | default('bastion-test') }}"
+      register: azure_test_ssh_settings
+      changed_when: false
+    - name: Verify provision key, username and DNS target are selected
+      ansible.builtin.assert:
+        that:
+        - "('identityfile ' ~ ssh_provision_key_path) in azure_test_ssh_settings.stdout_lines"
+        - "'user azure' in azure_test_ssh_settings.stdout_lines"
+        - "'hostname bastion.test.azure.redhatworkshops.io' in azure_test_ssh_settings.stdout_lines"
   - name: Exercise both ARO identity modes
     agnosticd.cloud_provider_azure.azure_environment:
       action: aro_install
