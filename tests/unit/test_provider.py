@@ -52,6 +52,17 @@ class ProviderTests(unittest.TestCase):
         self.responses = [(1, 'ResourceGroupNotFound')]
         self.assertIsNone(self.az.group('infra', 'eastus'))
 
+    def test_missing_arm_deployment_allows_initial_creation(self):
+        self.responses = [(1, "ERROR: (DeploymentNotFound) Deployment 'bastion' could not be found.\n"
+                              "Code: DeploymentNotFound\n"
+                              "Message: Deployment 'bastion' could not be found.\n")]
+        self.assertIsNone(self.az.call('deployment', 'group', 'show', '-g', 'infra', '-n', 'bastion', missing=True))
+
+    def test_missing_arm_deployment_is_fatal_unless_explicitly_allowed(self):
+        self.responses = [(1, 'ERROR: (DeploymentNotFound) Deployment could not be found.')]
+        with self.assertRaisesRegex(provider.AzureError, 'DeploymentNotFound'):
+            self.az.call('deployment', 'group', 'show', '-g', 'infra', '-n', 'bastion')
+
     def test_unowned_group_cannot_be_deleted(self):
         self.responses = [(0, {'tags': {'agnosticd_project': 'someone-else'}})]
         with self.assertRaisesRegex(provider.AzureError, 'unowned'):

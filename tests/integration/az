@@ -10,8 +10,8 @@ s = json.loads(p.read_text()) if p.exists() else {'groups': {}, 'cluster': None,
 def value(flag, default=None):
     return args[args.index(flag)+1] if flag in args else default
 
-def missing():
-    print('ResourceNotFound', file=sys.stderr)
+def missing(code='ResourceNotFound'):
+    print(code, file=sys.stderr)
     sys.exit(3)
 
 def answer(obj):
@@ -43,7 +43,7 @@ if args[:4] == ['network', 'dns', 'record-set', 'a']:
     if operation == 'delete': s['record'] = None
     answer(s['record'])
 if args[:3] == ['deployment', 'group', 'show']:
-    if not s.get('deployed'): missing()
+    if not s.get('deployed'): missing('DeploymentNotFound')
     answer({'properties': {'provisioningState': 'Succeeded'}})
 if args[:3] == ['deployment', 'group', 'create']:
     template=json.loads(Path(value('--template-file')).read_text())

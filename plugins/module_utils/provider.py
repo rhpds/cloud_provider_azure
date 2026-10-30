@@ -45,7 +45,8 @@ class Azure:
         if result.returncode:
             # Never confuse forbidden, bad credentials or network failures with absence.
             if missing and any(x in result.stderr for x in
-                               ('ResourceNotFound', 'ResourceGroupNotFound', 'ParentResourceNotFound')):
+                               ('ResourceNotFound', 'ResourceGroupNotFound', 'ParentResourceNotFound',
+                                'DeploymentNotFound')):
                 return None
             message = result.stderr
             for key in ('password', 'app_id'):
