@@ -11,10 +11,15 @@ name: Static Checks
     branches:
     - main
 
+permissions:
+  contents: read
+
 jobs:
   static-checks:
     name: Run yamllint and ansible-lint
     runs-on: ubuntu-latest
+    env:
+      ANSIBLE_COLLECTIONS_PATH: ${{ runner.temp }}/collections
     strategy:
       matrix:
         python-version:
@@ -22,14 +27,30 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7.0.1
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v7.1.0
       with:
         python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: tests/static/requirements.txt
 
-    - name: Run static checks
+    - name: Install check dependencies
+      run: python -m pip install -r tests/static/requirements.txt
+
+    - name: Build and install collection for module resolution
       run: |
-        pip install tox
-        tox -c tests/static
+        ansible-galaxy collection build --output-path "${RUNNER_TEMP}"
+        ansible-galaxy collection install --no-deps \
+          "${RUNNER_TEMP}"/agnosticd-cloud_provider_azure-*.tar.gz \
+          --collections-path "${ANSIBLE_COLLECTIONS_PATH}"
+
+    - name: Check YAML
+      run: yamllint .
+
+    - name: Check Ansible
+      run: ansible-lint --offline
+
+    - name: Run unit tests
+      run: python -m unittest discover -s tests/unit -v

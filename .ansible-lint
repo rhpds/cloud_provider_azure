@@ -6,3 +6,9 @@ skip_list:
 - var-naming[pattern]
 mock_modules:
 - agnosticd.core.agnosticd_user_info
+mock_roles:
+# These shared roles are supplied by the v2 deployer, outside this collection.
+- host_ocp4_installer
+- host_ocp4_installer_info
+- host_ssh_authorized_keys
+- infra_common_ssh_config_generate
