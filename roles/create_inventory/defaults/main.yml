@@ -1,0 +1,17 @@
+---
+# Controller facts produced by initialize. Run that role on localhost first;
+# these defaults document the contract and do not manufacture authentication.
+# azure_auth (secret mapping): normalized sandbox credentials on localhost.
+azure_auth: "{{ undef(hint='Run initialize on localhost before create_inventory') }}"
+# azure_settings (mapping): exact resource group, region and DNS ownership data.
+azure_settings: "{{ undef(hint='Run initialize on localhost before create_inventory') }}"
+# azure_cli_config_dir (path): isolated controller az session directory.
+azure_cli_config_dir: "{{ undef(hint='Run initialize on localhost before create_inventory') }}"
+# project_tag (string): original agnosticd_project ownership tag used to filter VMs.
+project_tag: "{{ undef(hint='Supply the deployment project_tag') }}"
+# azure_bastion_user (string): SSH login/cloud_user attached to discovered hosts.
+# Must equal the account used by template_generate when the VM was created.
+azure_bastion_user: azure
+# azure_result (mapping): internal registered inventory result; its vms list is
+# converted to dynamic inventory. Do not supply or persist it as a user setting.
+azure_result: "{{ undef(hint='Internal inventory module result') }}"

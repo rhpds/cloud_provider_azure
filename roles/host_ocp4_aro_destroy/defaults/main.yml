@@ -1,0 +1,14 @@
+---
+# Inputs generated on localhost by initialize with the ORIGINAL config, guid,
+# subscription and output archive. This role always delegates to the controller;
+# it does not need a running bastion or an OpenShift kubeconfig.
+# azure_auth (secret mapping): normalized sandbox authentication.
+azure_auth: "{{ undef(hint='Run initialize on localhost before host_ocp4_aro_destroy') }}"
+# azure_settings (mapping): exact cluster_group, cluster_name, region and other
+# archived ownership settings. The group must carry the original project tag.
+azure_settings: "{{ undef(hint='Run initialize with the original deployment settings') }}"
+# azure_cli_config_dir (path): isolated controller Azure CLI session directory.
+azure_cli_config_dir: "{{ undef(hint='Run initialize on localhost before host_ocp4_aro_destroy') }}"
+# project_tag (string): original agnosticd_project tag. ARO is deleted before its
+# owned cluster group. Use template_destroy afterwards for bastion/DNS cleanup.
+project_tag: "{{ undef(hint='Supply the original deployment project_tag') }}"

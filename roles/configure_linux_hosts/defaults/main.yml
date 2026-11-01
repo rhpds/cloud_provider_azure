@@ -1,0 +1,10 @@
+---
+# host_ssh_authorized_keys (list of mappings): optional public keys added by the
+# shared v2 role of the same name after SSH becomes available. Each entry uses
+# that role's schema, e.g. {key: 'ssh-rsa ...', key_options: 'no-port-forwarding'}.
+# Empty means keep the provision key already installed by ARM and add no keys.
+host_ssh_authorized_keys: []
+
+# The target connection (ansible_host, ansible_user, SSH key/config) is supplied
+# through Ansible inventory. Ansible magic/connection context and the included
+# shared role's own variables are documented in README.md rather than overridden.

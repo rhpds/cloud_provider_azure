@@ -1,2 +1,12 @@
 ---
+# azure_cli_version (string): exact RPM version without architecture/release.
+# This pin must be available in Microsoft's repository for the bastion RHEL
+# major version. Keep the controller execution environment's az pin aligned.
+# The role supports RedHat-family majors 8, 9 and 10 and uses become for RPM,
+# repository and DNF changes. It performs no Azure login or resource operations.
 azure_cli_version: 2.90.0
+
+# install_cli_host_setup (mapping): internal registered setup() result containing
+# ansible_facts. Distribution selection uses this result so delegation does not
+# accidentally read the controller's facts. Supplied by the role, not the user.
+install_cli_host_setup: "{{ undef(hint='Internal distribution facts gathered on the Azure CLI target') }}"

@@ -1,0 +1,12 @@
+---
+# ansible_user (string): SSH login account on the bastion. The role writes the
+# installer's secret credential file beneath /home/<ansible_user>/.azure.
+# Supplied by the dynamic bastion inventory; this role does not change users.
+ansible_user: "{{ undef(hint='Supply the bastion SSH user through inventory') }}"
+# azure_auth (secret mapping): normalized credential fact on hostvars.localhost,
+# produced by initialize. Required keys: subscription_id, app_id, password,
+# tenant. The resulting osServicePrincipal.json has mode 0600.
+azure_auth: "{{ undef(hint='Run initialize on localhost before installer_credentials') }}"
+# azure_cli_version (string): passed to the included install_cli role. Keep its
+# value aligned with the controller execution environment; see that role's README.
+azure_cli_version: 2.90.0

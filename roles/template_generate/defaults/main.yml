@@ -1,6 +1,36 @@
 ---
+# guid (string): unique deployment ID, used for the bastion-<guid> VM name.
+guid: "{{ undef(hint='Supply the deployment guid') }}"
+# azure_region (string): Azure location code such as eastus, normalized by
+# initialize. Rendering itself does not contact Azure or verify region capacity.
+azure_region: "{{ undef(hint='Run initialize to normalize the Azure region') }}"
+# project_tag (string): exact agnosticd_project tag for all bastion resources.
+project_tag: "{{ undef(hint='Supply the deployment project_tag') }}"
+# azure_bastion_user (string): administrative SSH login account in the new VM.
+# Password SSH is disabled; this must match inventory and SSH configuration.
+azure_bastion_user: azure
+# azure_bastion_vm_size (string): bastion Azure SKU, independent of ARO/IPI sizes.
+azure_bastion_vm_size: Standard_D2s_v5
+# azure_bastion_ssh_source (string): source IP/CIDR allowed to TCP/22 by the NSG.
+# '*' permits all sources. Restrict to a controller egress CIDR when appropriate.
+azure_bastion_ssh_source: '*'
+# ssh_provision_pubkey_content (string): actual OpenSSH public key text produced
+# by v2's provision-key/authorized-key roles; never a path or private key.
+ssh_provision_pubkey_content: "{{ undef(hint='Supply the environment SSH provision public key content') }}"
+# azure_bastion_image (mapping): complete Azure Marketplace image reference.
+# Override the whole mapping, including publisher/offer/sku/version, for another
+# image. For a new RHEL 10 bastion use sku: 10-lvm-gen2. Availability depends on
+# the selected region. Successful deployments are reused, not reimaged.
 azure_bastion_image:
+  # Marketplace publisher and offer for the PAYG RHEL image.
   publisher: RedHat
   offer: RHEL
+  # RHEL major/image variant. The default is generation-2 RHEL 9 with LVM.
   sku: 9-lvm-gen2
+  # Image revision; 'latest' is resolved when a NEW VM is deployed.
   version: latest
+
+# azure_arm_template (mapping): generated ARM template output consumed by
+# template_create. Rendering includes a static public IP, SSH-only NSG, NIC,
+# 10.240.0.0/24 VNet and a VM with a 64 GiB Premium_LRS OS disk.
+azure_arm_template: "{{ undef(hint='Generated ARM template output; do not supply it as a user setting') }}"

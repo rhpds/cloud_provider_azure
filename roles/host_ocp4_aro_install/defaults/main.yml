@@ -1,0 +1,51 @@
+---
+# Required controller facts produced by initialize. The installation dispatcher
+# delegates this role's tasks to the bastion; hostvars.localhost remains the
+# authoritative source of normalized credentials and cluster settings.
+# azure_auth (secret mapping): subscription_id, app_id, password and tenant.
+azure_auth: "{{ undef(hint='Run initialize on localhost before host_ocp4_aro_install') }}"
+# azure_settings (mapping): normalized ARO settings including a non-empty version
+# and worker_count >= 3. Configure aro_* inputs on initialize, not this mapping.
+azure_settings: "{{ undef(hint='Run initialize with complete ARO settings') }}"
+# project_tag (string): exact agnosticd_project ownership tag.
+project_tag: "{{ undef(hint='Supply the deployment project_tag') }}"
+# ansible_user (string): bastion SSH user; must own /home/<ansible_user> and be
+# able to become root for CLI packages and optional student kubeconfig setup.
+ansible_user: "{{ undef(hint='Supply the bastion SSH user through inventory') }}"
+# cluster_name (string): directory name beneath the bastion user's home, matching
+# the shared installer/info role contract. This is not the Azure aro_cluster_name.
+cluster_name: "{{ undef(hint='Supply cluster_name from the openshift-cluster config') }}"
+# config (string): v2 config name, used to name controller access files.
+config: "{{ undef(hint='Supply the v2 config name') }}"
+# guid (string): unique deployment ID in the controller access filenames.
+guid: "{{ undef(hint='Supply the deployment guid') }}"
+# output_dir (absolute controller path): existing archive directory receiving
+# <config>_<guid>_kubeconfig and <config>_<guid>_kubeadmin-password, mode 0600.
+output_dir: "{{ undef(hint='Supply the controller output_dir') }}"
+# ocp4_pull_secret (secret JSON string or mapping): optional for ARO. When
+# supplied, passed through a private temporary file and protected module output.
+# Self-managed IPI requires a pull secret through the shared installer instead.
+ocp4_pull_secret: ""
+# azure_cli_version (string): version passed to the included install_cli role;
+# match the controller execution environment and repository availability.
+azure_cli_version: 2.90.0
+# bastion_setup_student_user (boolean): copy kubeconfig to an already-created
+# student account. The role does not create that account. v2 supplies its choice.
+bastion_setup_student_user: false
+# bastion_student_user_name (string): required when student setup is enabled;
+# user must already exist. v2 normally supplies lab-user (or an explicit override).
+bastion_student_user_name: "{{ undef(hint='Supply the existing student username when student access is enabled') }}"
+
+# Internal outputs and task-local values. They are not configuration inputs.
+# azure_aro_result (secret mapping): async provisioning result with cluster API
+# URL and kubeadmin credentials. Never expose it with debug or in public status.
+azure_aro_result: "{{ undef(hint='Internal protected ARO provisioning result') }}"
+# azure_aro_login (secret mapping): registered oc login result used for retries.
+azure_aro_login: "{{ undef(hint='Internal protected oc login result') }}"
+# _diagnostic (mapping): task-local public SKU/quota diagnostic from a failed run.
+_diagnostic: "{{ undef(hint='Internal task-local non-secret failure diagnostic') }}"
+# _settings (mapping): task-local reference to localhost's normalized settings.
+_settings: "{{ undef(hint='Internal task-local normalized ARO settings') }}"
+# host_ocp4_installer_version (string): task-local argument to the shared client
+# installer, derived from azure_settings.version rather than independently chosen.
+host_ocp4_installer_version: "{{ undef(hint='Derived from the selected ARO version for client installation') }}"

@@ -1,17 +1,129 @@
 ---
+# Deployment context supplied by the v2 config. Required values intentionally
+# remain undefined so missing input fails instead of selecting another deployment.
+# config (string): config name used in ownership records and resource group names.
+config: "{{ undef(hint='Supply the v2 config name, normally openshift-cluster') }}"
+# guid (string): unique deployment identifier; must not be 'notset'.
+guid: "{{ undef(hint='Supply a unique deployment guid') }}"
+# project_tag (string): exact agnosticd_project ownership tag. Keep it unchanged
+# across provision, lifecycle and destroy jobs, normally <config>-<guid>.
+project_tag: "{{ undef(hint='Supply the deployment project_tag from the v2 config') }}"
+# output_dir (absolute path): existing controller directory holding the archived
+# ownership record, SSH keys and installer artifacts. Restore it for later jobs.
+output_dir: "{{ undef(hint='Supply the existing controller output_dir') }}"
+# ACTION (string): v2 run action. If omitted, initialization treats the run as
+# provision. Lifecycle/destroy runs preserve recorded ARO VM sizes.
+ACTION: "{{ undef(hint='Supply ACTION for lifecycle or destroy; omission means provision') }}"
+# Installation method: aro (managed standard ARO) or openshift_install (IPI).
+host_ocp4_deploy_installation_method: openshift_install
+
+# Azure authentication inputs. Supply EITHER one complete azure_sandbox payload
+# OR the flattened fields below, using Vault or a separate secrets file.
+# An undefined default preserves the existing 'is defined' and alias behavior.
+# Explicit null/empty/incomplete nested payloads are invalid; they do not trigger
+# fallback to flattened credentials or the controller's ambient az login.
+# azure_sandbox (mapping): credentials must be a list with exactly one mapping:
+#   credentials:
+#   - subscription_id: subscription UUID
+#     app_id: service principal application/client UUID
+#     password: service principal secret
+#     tenant: tenant UUID or domain
+#     resource_group: existing sandbox resource group containing the DNS zone
+#     azure_region: Azure location code, e.g. eastus
+azure_sandbox: "{{ undef(hint='Optional complete sandbox payload; otherwise supply flattened Azure credentials') }}"
+# azure_subscription (string): subscription UUID; azure_subscription_id is an
+# accepted alias only when this canonical variable is undefined.
+azure_subscription: "{{ undef(hint='Supply azure_subscription or azure_subscription_id') }}"
+# azure_subscription_id (string): compatibility alias, also normalized on output.
+azure_subscription_id: "{{ undef(hint='Optional alias for azure_subscription') }}"
+# azure_service_principal_id (string): application/client UUID used for az login.
+azure_service_principal_id: "{{ undef(hint='Supply the sandbox service principal client ID') }}"
+# azure_service_principal_password (secret string): principal secret. Never commit
+# it to sample files or include it in debug output.
+azure_service_principal_password: "{{ undef(hint='Supply the sandbox service principal secret securely') }}"
+# azure_tenant (string): tenant UUID or domain; azure_tenant_id is its alias when
+# the canonical variable is undefined. This is an input to az login.
+azure_tenant: "{{ undef(hint='Supply azure_tenant or azure_tenant_id') }}"
+# azure_tenant_id (string): optional compatibility alias for azure_tenant.
+azure_tenant_id: "{{ undef(hint='Optional alias for azure_tenant') }}"
+# azure_resource_group (string): existing SANDBOX group, not a deployment-owned
+# group. The group and its delegated DNS zone are preserved during destruction.
+azure_resource_group: "{{ undef(hint='Supply the existing sandbox resource group name') }}"
+# azure_region (string): Azure location code, e.g. eastus, not 'East US'. For a
+# nested payload the credential entry is authoritative. Current validation also
+# requires the sandbox resource group's location to equal this value.
+azure_region: "{{ undef(hint='Supply the Azure location code, for example eastus') }}"
+
+# DNS configuration. The zone must already exist in the sandbox resource group
+# and be delegated from its parent. The collection creates only its bastion A
+# record; it does not create the zone or change parent delegation.
+# azure_root_dns_zone (string): suffix used only to derive azure_dns_zone.
 azure_root_dns_zone: azure.redhatworkshops.io
+# azure_dns_zone (string): full delegated child zone, without a trailing dot.
 azure_dns_zone: "{{ guid }}.{{ azure_root_dns_zone }}"
+# azure_infra_resource_group (string): owned group for the bastion, VNet, NSG,
+# NIC and public IP. Must differ from sandbox, cluster and ARO-managed groups.
 azure_infra_resource_group: "{{ config }}-{{ guid }}-infra"
+# azure_cluster_resource_group (string): owned group for ARO's cluster resource,
+# network and identities, or the initially empty IPI installer resource group.
+# ARO's managed group is this name followed by '-managed'. Do not put unrelated
+# resources in these groups. Archived names are checked on every later run.
 azure_cluster_resource_group: "{{ config }}-{{ guid }}-cluster"
+
+# ARO configuration. These inputs are recorded even for IPI for a consistent
+# ownership contract; they do not size self-managed IPI machines.
+# aro_cluster_name (string): Azure ARO resource name; independent of cluster_name
+# used for directories on the bastion. Keep it stable for the deployment.
 aro_cluster_name: "aro-{{ guid }}"
+# aro_identity_mode: managed_identity (default) or service_principal. In both
+# modes the sandbox principal authenticates the provisioning operation. This
+# option chooses the identity used by the cluster itself.
 aro_identity_mode: managed_identity
+# aro_version (string): REQUIRED for ARO; exact value from the read-only command
+# az aro get-versions --location <azure_region>. Empty is allowed for IPI.
 aro_version: ""
+# aro_master_vm_size (string): Azure SKU for each of three control-plane nodes.
+# Quota preflight reserves a fourth node of this size for bootstrap.
 aro_master_vm_size: Standard_D8s_v5
+# aro_worker_vm_size (string): Azure SKU for every ARO worker.
 aro_worker_vm_size: Standard_D4s_v5
+# aro_worker_count (integer): standard ARO needs at least three workers.
 aro_worker_count: 3
+# aro_worker_disk_size (integer): OS disk capacity per worker in GiB.
 aro_worker_disk_size: 128
+# aro_vnet_cidr (IPv4 CIDR string): ARO machine VNet, separate from the bastion
+# VNet (10.240.0.0/24). It must contain both ARO machine subnets.
 aro_vnet_cidr: 10.0.0.0/22
+# aro_master_subnet_cidr (IPv4 CIDR string): control-plane subnet in that VNet.
 aro_master_subnet_cidr: 10.0.0.0/23
+# aro_worker_subnet_cidr (IPv4 CIDR string): worker subnet, disjoint from master.
 aro_worker_subnet_cidr: 10.0.2.0/23
+# aro_pod_cidr (IPv4 CIDR string): pod network; must not overlap the VNet or
+# service network. Network choices are archived and must stay unchanged.
 aro_pod_cidr: 10.128.0.0/14
+# aro_service_cidr (IPv4 CIDR string): service network; must not overlap VNet/pods.
 aro_service_cidr: 172.30.0.0/16
+
+# Generated provider facts. These are OUTPUTS, not a second credential API.
+# set_fact populates them with higher precedence than these defaults.
+# azure_auth (secret mapping): normalized subscription_id, app_id, password,
+# tenant, resource_group and azure_region; stored in memory on localhost only.
+azure_auth: "{{ undef(hint='Generated by initialize from the supplied sandbox credentials') }}"
+# azure_settings (mapping): non-secret settings plus exact ownership boundaries;
+# serialized to <output_dir>/<config>_<guid>_azure_ownership.json.
+azure_settings: "{{ undef(hint='Generated by initialize; do not override provider settings directly') }}"
+# azure_cli_config_dir (path): controller-local az session/cache directory,
+# generated as <output_dir>/.azure-<config>-<guid>. Contains credentials.
+azure_cli_config_dir: "{{ undef(hint='Generated by initialize for the controller Azure CLI session') }}"
+# Compatibility output aliases consumed by shared v2 installer roles.
+# azure_service_principal (string): normalized application/client UUID.
+azure_service_principal: "{{ undef(hint='Generated service principal ID compatibility alias') }}"
+# azure_password (secret string): normalized principal secret compatibility alias.
+azure_password: "{{ undef(hint='Generated secret compatibility alias; never log it') }}"
+# az_dnszone_resource_group (string): normalized sandbox resource group name.
+az_dnszone_resource_group: "{{ undef(hint='Generated DNS resource group compatibility alias') }}"
+# Internal registered results: stat() of ownership archive and its slurped bytes.
+azure_ownership_stat: "{{ undef(hint='Internal ownership archive stat result') }}"
+azure_ownership_slurp: "{{ undef(hint='Internal ownership archive slurp result') }}"
+# saved (mapping): task-local decoded ownership archive; never an input override.
+saved: "{{ undef(hint='Internal task-local decoded ownership record') }}"

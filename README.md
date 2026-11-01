@@ -2,7 +2,42 @@
 
 Collection namespace: `agnosticd.cloud_provider_azure`. This collection supports
 new v2 deployments: a Linux bastion, self-managed Azure OpenShift IPI and standard
-architecture ARO. The `cloud_provider_azure_codex_try1` prototype is not used.
+architecture ARO.
+
+## Roles
+
+Each role has a README describing prerequisites, execution location, inputs,
+outputs, retry/cleanup behavior and an invocation example. Every project variable
+directly used by its tasks/templates is declared and documented in that role's
+`defaults/main.yml`, including generated results. Required values use
+`undef(hint=...)` so declaring them does not fabricate credentials or disable
+undefined-variable fallbacks. Ansible magic variables (`hostvars`, `groups`, loop
+items) are supplied by Ansible and are not replaced with defaults. Connection
+context comes from inventory. Options of included shared v2 roles are documented
+by those roles; the collection READMEs identify those dependencies.
+
+| Role | Purpose and execution location |
+| --- | --- |
+| [initialize](roles/initialize/README.md) | Controller: normalize credentials, validate sandbox and archive ownership |
+| [template_generate](roles/template_generate/README.md) | Controller: render Linux bastion ARM template |
+| [template_create](roles/template_create/README.md) | Controller: create/reuse bastion infrastructure and owned DNS record |
+| [create_inventory](roles/create_inventory/README.md) | Controller: discover owned bastion and populate `bastions` inventory |
+| [configure_linux_hosts](roles/configure_linux_hosts/README.md) | Bastion: wait for SSH and optionally add authorized keys |
+| [install_cli](roles/install_cli/README.md) | RHEL target: install pinned Azure CLI RPM and repository |
+| [installer_prepare](roles/installer_prepare/README.md) | Controller: create/verify the owned self-managed IPI group |
+| [installer_credentials](roles/installer_credentials/README.md) | Bastion: write the secret IPI service-principal file |
+| [installer_platform](roles/installer_platform/README.md) | Render Azure YAML fragments for the shared IPI installer |
+| [host_ocp4_aro_install](roles/host_ocp4_aro_install/README.md) | Delegated bastion: provision/reconnect ARO and export access files |
+| [host_ocp4_aro_destroy](roles/host_ocp4_aro_destroy/README.md) | Controller: delete ARO before its owned network/identity group |
+| [lifecycle](roles/lifecycle/README.md) | Controller: start, stop or report status using a separate lifecycle action |
+| [template_destroy](roles/template_destroy/README.md) | Controller: remove owned bastion/DNS after cluster cleanup |
+
+For a normal provision run, initialize on localhost, prepare SSH keys, render and
+deploy the bastion template, discover inventory, generate SSH config, configure
+the guest, then invoke the selected OpenShift method. Destruction reverses the
+dependency order: workload cleanup, cluster cleanup, then bastion/DNS cleanup.
+Use the original settings and output archive in subsequent jobs. The v2 checkout
+provides extensively commented ARO/IPI samples and `docs/azure.md` with entrypoints.
 
 ## Sandbox contract
 

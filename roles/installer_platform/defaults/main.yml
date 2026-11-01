@@ -1,0 +1,24 @@
+---
+# azure_settings (mapping): controller fact produced by initialize; the templates
+# read region, sandbox_group and cluster_group from hostvars.localhost.
+azure_settings: "{{ undef(hint='Run initialize on localhost before installer_platform') }}"
+# project_tag (string): exact ownership tag added to installer-created resources.
+project_tag: "{{ undef(hint='Supply the deployment project_tag') }}"
+# cloud_tags_final (mapping): optional extra v2 tags read from localhost. The
+# agnosticd_project key is always replaced with project_tag to retain ownership.
+cloud_tags_final: {}
+# control_plane_instance_type (string): Azure VM SKU for SELF-MANAGED IPI control
+# plane nodes. ARO uses aro_master_vm_size instead.
+control_plane_instance_type: Standard_D8s_v5
+# worker_instance_type (string): Azure VM SKU for SELF-MANAGED IPI workers.
+# ARO uses aro_worker_vm_size instead. Node counts are owned by the v2 config.
+worker_instance_type: Standard_D4s_v5
+
+# Outputs (YAML strings), set_fact-generated for the shared host_ocp4_installer
+# template. Do not override these fragments or copy Azure-specific YAML into v2.
+# host_ocp4_installer_platform_fragment: azure region, group names and userTags.
+host_ocp4_installer_platform_fragment: "{{ undef(hint='Generated Azure installer platform YAML') }}"
+# host_ocp4_installer_control_plane_platform_fragment: Azure control-plane SKU.
+host_ocp4_installer_control_plane_platform_fragment: "{{ undef(hint='Generated IPI control-plane platform YAML') }}"
+# host_ocp4_installer_worker_platform_fragment: Azure worker SKU.
+host_ocp4_installer_worker_platform_fragment: "{{ undef(hint='Generated IPI worker platform YAML') }}"
