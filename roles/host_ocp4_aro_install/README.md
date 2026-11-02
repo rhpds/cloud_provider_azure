@@ -72,6 +72,11 @@ them with mode `0600`:
 - `<output_dir>/<config>_<guid>_kubeconfig`
 - `<output_dir>/<config>_<guid>_kubeadmin-password`
 
+Regular ARO also saves the password in `agnosticd_user_info` under the standard
+`openshift_kubeadmin_password` data key. This is automatic after successful login,
+independently of the shared installer info role's opt-in password setting. The
+task uses `no_log` to keep the password out of Ansible output.
+
 It also writes the bastion login user's `.kube/config`, optionally copies it to
 the student user, and invokes the shared role that publishes standard OpenShift
 access information. Preserve the output archive for workloads and later jobs.

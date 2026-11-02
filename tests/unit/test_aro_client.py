@@ -1,4 +1,5 @@
-"""Install a synthetic client archive and run the real protected login task offline."""
+"""Exercise client installation, protected login and password publication offline."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -66,14 +67,29 @@ raise SystemExit(1)
             tasks = yaml.safe_load((ROOT / 'roles/host_ocp4_aro_install/tasks/classic_access.yml').read_text())
             login = next(task for task in tasks if task['name'] == 'Log into ARO')
             login['block'][0].update(retries=1, delay=0)
+            save_password = next(task for task in tasks if task['name'] == 'Save ARO kubeadmin password in user data')
+            # Capture the user-info action's rendered arguments without requiring
+            # the external core collection or writing a real deployment archive.
+            action_dir = collection / 'core/plugins/action'
+            action_dir.mkdir(parents=True)
+            (action_dir / 'agnosticd_user_info.py').write_text('''from ansible.plugins.action import ActionBase
+from pathlib import Path
+import json
+class ActionModule(ActionBase):
+    def run(self, tmp=None, task_vars=None):
+        data = self._task.args['data']
+        Path(task_vars['test_user_data_path']).write_text(json.dumps(data))
+        return dict(changed=False, data=data)
+''')
             fragment = root / 'login.yml'
-            fragment.write_text(yaml.safe_dump([login], sort_keys=False))
+            fragment.write_text(yaml.safe_dump([login, save_password], sort_keys=False))
             playbook = root / 'client.yml'
             playbook.write_text(yaml.safe_dump([dict(
                 name='Exercise client-only installation and protected login without Azure',
                 hosts='localhost', connection='local', gather_facts=False,
                 vars=dict(ansible_become=False, ansible_user='synthetic-user', cluster_name='ocp',
                           aro_client_download_url=str(archive), aro_client_install_dir=str(root / 'bin'),
+                          test_user_data_path=str(root / 'user-data.json'),
                           ansible_python_interpreter=sys.executable,
                           install_cli_host_setup={'ansible_facts': {'ansible_architecture': 'x86_64'}},
                           azure_aro_result={'cluster': {'apiserverProfile': {
@@ -94,9 +110,15 @@ raise SystemExit(1)
             config.write_text('[defaults]\nretry_files_enabled = false\n')
             env = dict(os.environ, ANSIBLE_CONFIG=str(config), ANSIBLE_COLLECTIONS_PATH=str(root),
                        ANSIBLE_LOCAL_TEMP=str(root / 'local'), ANSIBLE_REMOTE_TEMP=str(root / 'remote'))
-            return subprocess.run([sys.executable, '-m', 'ansible.cli.playbook', str(playbook),
+            result = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook', str(playbook),
                                    '-e', 'host_ocp4_installer_version=4.22'],
                                   cwd=root, env=env, text=True, capture_output=True, check=False, timeout=90)
+            if result.returncode == 0:
+                self.assertEqual(json.loads((root / 'user-data.json').read_text()), {
+                    'openshift_kubeadmin_password': 'opaque-aro-eastus-128-3-password'})
+            if fail_login:
+                self.assertFalse((root / 'user-data.json').exists())
+            return result
 
     def test_only_clients_are_installed_and_login_uses_unmodified_connection_data(self):
         result = self.run_client_and_login()

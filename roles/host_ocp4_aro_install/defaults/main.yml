@@ -59,7 +59,9 @@ bastion_student_user_name: "{{ undef(hint='Supply the existing student username 
 
 # Internal outputs and task-local values. They are not configuration inputs.
 # azure_aro_result (secret mapping): async provisioning result with cluster API
-# URL and kubeadmin credentials. Never expose it with debug or in public status.
+# URL and kubeadmin credentials. Regular ARO publishes credentials.kubeadminPassword
+# as agnosticd_user_info data.openshift_kubeadmin_password after successful login.
+# Never expose this result with debug or in public status.
 azure_aro_result: "{{ undef(hint='Internal protected ARO provisioning result') }}"
 # azure_aro_login (secret mapping): registered oc login result used for retries.
 azure_aro_login: "{{ undef(hint='Internal protected oc login result') }}"
