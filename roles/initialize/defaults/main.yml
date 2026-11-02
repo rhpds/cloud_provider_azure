@@ -141,6 +141,9 @@ saved: "{{ undef(hint='Internal task-local decoded ownership record') }}"
 # aro_deploy_hcp (boolean): opt in to hosted control planes. Valid only for aro
 # with managed_identity. Existing archives without this key mean classic ARO;
 # an archived deployment cannot change architectures. Use a new GUID instead.
+# After credential normalization/login, Azure's HCP provider metadata validates
+# the region before ownership processing, sandbox resource queries or provisioning.
+# Nested sandbox credentials supply the authoritative region when present.
 aro_deploy_hcp: false
 # aro_hcp_nodepool_name (string): single HCP worker pool name.
 aro_hcp_nodepool_name: workers

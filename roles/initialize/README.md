@@ -5,6 +5,15 @@ validate the existing sandbox group and DNS zone, and record the ownership
 boundaries used by later provisioning and cleanup jobs. This is the first Azure
 role in provision, lifecycle and destroy runs.
 
+For HCP, the first Azure operation after credential normalization/login reads
+`Microsoft.RedHatOpenShift` provider metadata for the `HCPOpenShiftClusters`
+resource type. Unsupported regions fail before ownership archive reads/writes,
+sandbox resource queries or provisioning, with the region codes advertised by
+Azure for that subscription. There is no hardcoded region allowlist or fallback;
+missing metadata and authentication/authorization failures remain errors. With
+a nested sandbox payload, its credential entry supplies the effective region
+even if a flat `azure_region` is also set. Classic ARO and IPI skip this check.
+
 ## Run location and prerequisites
 
 Run on `localhost` with a local connection. Azure CLI must already be available

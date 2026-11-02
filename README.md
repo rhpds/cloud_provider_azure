@@ -244,11 +244,25 @@ ingress, managed identities, OVN-Kubernetes, and a public owned encryption vault
 `aro_version` must be an exact advertised HCP release: its minor selects the
 control plane, and its full version selects the node pool and client. Standard
 master size/subnet inputs are unused. See initialize/defaults for the pool,
-logical zone and integration CIDR options. Supported preview regions include
-`eastus2` and `westeurope`; `eastus` is not in the published preview list. The
+logical zone and integration CIDR options. Initialization queries Azure provider
+metadata for HCP-specific regions immediately after login, before reading ownership
+archives or querying sandbox resources. Unsupported regions fail with the supported
+codes returned by Azure; the collection has no hardcoded region allowlist. The
 existing sandbox-group region check still applies. HCP quota preflight requires
 at least 20 available regional/worker-family cores, or workers plus surge when
 larger. No control-plane/bootstrap cores are allocated in this subscription.
+
+Inspect available HCP locations with this read-only command:
+
+```sh
+az provider show --namespace Microsoft.RedHatOpenShift \
+  --query "resourceTypes[?resourceType=='HCPOpenShiftClusters'].locations | [0]" -o json
+```
+
+Azure returns display names (for example, `East US 2`); use their location codes
+(`eastus2`) for `azure_region`. The provider matches resource type names without
+case sensitivity and normalizes the returned locations. Missing HCP metadata or
+access failures abort validation without falling back to classic ARO locations.
 
 Discover regional HCP releases with this read-only command, replacing both
 placeholders (classic `az aro get-versions` queries a different resource type):

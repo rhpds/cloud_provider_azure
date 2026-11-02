@@ -133,7 +133,7 @@ options:
     description: Provider operation.
     type: str
     required: true
-    choices: [validate, installer_prepare, provision, inventory, destroy, check_region_change, aro_check_sizes, aro_install, aro_destroy, hcp_credentials, start, stop, status]
+    choices: [validate, installer_prepare, provision, inventory, destroy, check_region_change, aro_check_sizes, aro_install, aro_destroy, hcp_check_region, hcp_credentials, start, stop, status]
   template:
     description: Rendered ARM deployment template.
     type: dict
@@ -166,13 +166,20 @@ expirationTimestamp:
   description: Expiry of the temporary HCP administrative certificate.
   type: str
   returned: when hcp_credentials is requested
+supported_regions:
+  description: HCP region codes advertised by the subscription's Azure provider metadata.
+  type: list
+  elements: str
+  returned: when hcp_check_region is requested
 '''
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.provider import Azure, AzureError, validate_names
-from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.hcp import HCP
+from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.hcp import HCP, check_region
 
 
 def execute(az, action, s, template):
+    if action == 'hcp_check_region':
+        return dict(supported_regions=check_region(az, s['region']))
     if action == 'validate':
         if s.get('hcp'):
             HCP(az, s).validate()
@@ -255,7 +262,8 @@ def argument_spec():
         settings=dict(type='dict', required=True, options=settings_options),
         config_dir=dict(type='path', required=True), project=dict(type='str', required=True),
         action=dict(type='str', required=True, choices=['validate', 'installer_prepare', 'provision', 'inventory', 'destroy',
-                    'check_region_change', 'aro_check_sizes', 'aro_install', 'aro_destroy', 'hcp_credentials', 'start', 'stop', 'status']),
+                    'check_region_change', 'aro_check_sizes', 'aro_install', 'aro_destroy', 'hcp_check_region', 'hcp_credentials',
+                    'start', 'stop', 'status']),
         template=dict(type='dict', default={}))
 
 

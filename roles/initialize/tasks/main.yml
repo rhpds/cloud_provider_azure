@@ -80,6 +80,15 @@
       service_cidr: "{{ aro_service_cidr }}"
   no_log: true
 
+- name: Validate HCP region against Azure before processing ownership
+  when: aro_deploy_hcp | bool
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: hcp_check_region
+    auth: "{{ azure_auth }}"
+    settings: "{{ azure_settings }}"
+    config_dir: "{{ azure_cli_config_dir }}"
+    project: "{{ project_tag }}"
+
 - name: Add HCP settings to the ownership contract
   when: aro_deploy_hcp | bool
   ansible.builtin.set_fact:

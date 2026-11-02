@@ -12,8 +12,23 @@ from pathlib import Path
 from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.provider import AzureError, owned
 
 API = '2026-09-01-preview'
-REGIONS = ('australiaeast', 'brazilsouth', 'canadacentral', 'centralindia', 'eastus2',
-           'switzerlandnorth', 'uksouth', 'westeurope')
+
+
+def check_region(azure, region):
+    """Read HCP-specific subscription availability without registering or creating resources."""
+    provider = azure.call('provider', 'show', '--namespace', 'Microsoft.RedHatOpenShift')
+    types = provider.get('resourceTypes', []) if isinstance(provider, dict) else []
+    resource = next((item for item in (types if isinstance(types, list) else [])
+                     if isinstance(item, dict) and str(item.get('resourceType', '')).lower() == 'hcpopenshiftclusters'), {})
+    locations = resource.get('locations')
+    if not isinstance(locations, list) or not locations or any(not isinstance(x, str) or not x.strip() for x in locations):
+        raise AzureError('Azure did not advertise HCP regions for this subscription; '
+                         'check Microsoft.RedHatOpenShift registration and access')
+    regions = sorted({re.sub(r'[^a-z0-9]', '', location.lower()) for location in locations})
+    if region not in regions:
+        raise AzureError('ARO HCP is unavailable in region ' + region + '. '
+                         'Supported HCP regions reported by Azure: ' + ', '.join(regions))
+    return regions
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -85,8 +100,6 @@ class HCP:
         s = self.s
         if s['method'] != 'aro' or s['identity_mode'] != 'managed_identity':
             raise AzureError('HCP requires installation method aro and managed_identity')
-        if s['region'] not in REGIONS:
-            raise AzureError('ARO HCP preview is unavailable in region ' + s['region'] + '; choose a supported HCP region')
         if not re.fullmatch(r'[a-zA-Z]([-a-zA-Z0-9]{0,52}[a-zA-Z0-9])?', s['cluster_name']):
             raise AzureError('Invalid HCP cluster name')
         if not re.fullmatch(r'[a-zA-Z]([-a-zA-Z0-9]{0,52}[a-zA-Z0-9])?', s['hcp_nodepool']):
@@ -110,6 +123,7 @@ class HCP:
     def preflight(self):
         self.validate()
         s = self.s
+        check_region(self.az, s['region'])
         versions = self.rest('GET', 'https://management.azure.com/subscriptions/' + self.az.auth['subscription_id']
                              + '/providers/Microsoft.RedHatOpenShift/locations/' + s['region']
                              + '/hcpOpenShiftVersions?api-version=' + API)

@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 import sys
 args = sys.argv[1:]
+if os.environ.get('AZURE_TEST_CALLS'):
+    with open(os.environ['AZURE_TEST_CALLS'], 'a') as trace:
+        trace.write(json.dumps(args[:2]) + '\n')
 p = Path(os.environ['AZURE_TEST_STATE'])
 s = json.loads(p.read_text()) if p.exists() else {'groups': {}, 'cluster': None, 'record': None}
 def value(flag, default=None):
@@ -27,7 +30,10 @@ if args[0] == 'rest':
     assert properties['ARecords'] == [{'ipv4Address': '192.0.2.1'}]
     s['record'] = dict(properties, etag='synthetic-etag')
     answer({'properties': s['record']})
-if args[:2] == ['provider', 'show']: answer({'registrationState': 'Registered'})
+if args[:2] == ['provider', 'show']:
+    answer({'registrationState': 'Registered', 'resourceTypes': [
+        {'resourceType': 'OpenShiftClusters', 'locations': ['East US']},
+        {'resourceType': 'HCPOpenShiftClusters', 'locations': ['East US 2', 'West Europe', 'New HCP Region']}]})
 if args[:2] == ['group', 'show']:
     name = value('--name', value('-n'))
     if name == 'sandbox': answer({'location': os.environ.get('AZURE_TEST_REGION', 'eastus')})

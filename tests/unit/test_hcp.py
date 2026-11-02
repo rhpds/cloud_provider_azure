@@ -32,9 +32,9 @@ class HCPTests(unittest.TestCase):
     def ready(self):
         return {'tags': {'agnosticd_project': 'project'}, 'properties': {'provisioningState': 'Succeeded'}}
 
-    def test_validate_rejects_unsupported_region_identity_count_and_overlapping_networks(self):
+    def test_validate_rejects_identity_count_and_overlapping_networks(self):
         self.h.validate()
-        for change in ({'region': 'eastus'}, {'identity_mode': 'service_principal'}, {'worker_count': 1},
+        for change in ({'identity_mode': 'service_principal'}, {'worker_count': 1},
                        {'hcp_integration_cidr': '10.0.2.0/28'}, {'version': '4.21'}, {'cluster_name': 'bad_name'}):
             with self.subTest(change=change), self.assertRaises(provider.AzureError):
                 hcp.HCP(self.az, dict(self.s, **change)).validate()
@@ -186,6 +186,8 @@ class HCPTests(unittest.TestCase):
     def test_preflight_uses_worker_quota_floor_and_exact_versions(self):
         self.h.rest = Mock(return_value={'value': [{'name': '4.21.22'}]})
         def cli(*args):
+            if args[:2] == ('provider', 'show'):
+                return {'resourceTypes': [{'resourceType': 'HCPOpenShiftClusters', 'locations': ['East US 2']}]}
             if args[:2] == ('vm', 'list-skus'):
                 return [{'name': self.s['worker_size'], 'family': 'StandardDSv5Family', 'restrictions': [],
                          'locationInfo': [{'zones': ['1']}], 'capabilities': [{'name': 'vCPUs', 'value': '4'}]}]
@@ -198,6 +200,27 @@ class HCPTests(unittest.TestCase):
         self.h.rest.return_value = {'value': [{'name': '4.21.220'}]}
         with self.assertRaisesRegex(provider.AzureError, 'version is unavailable'):
             self.h.preflight()
+
+    def test_region_discovery_accepts_new_hcp_regions_and_ignores_classic_locations(self):
+        self.az.call.return_value = {'resourceTypes': [
+            {'resourceType': 'OpenShiftClusters', 'locations': ['East US']},
+            {'resourceType': 'HCPOpenShiftClusters', 'locations': ['New HCP Region', 'East US 2']}]}
+        self.assertEqual(hcp.check_region(self.az, 'newhcpregion'), ['eastus2', 'newhcpregion'])
+        with self.assertRaisesRegex(provider.AzureError, 'Supported HCP regions reported by Azure: eastus2, newhcpregion'):
+            hcp.check_region(self.az, 'eastus')
+        self.assertTrue(all(c.args == ('provider', 'show', '--namespace', 'Microsoft.RedHatOpenShift')
+                            for c in self.az.call.call_args_list))
+
+    def test_missing_hcp_metadata_and_access_failures_do_not_use_a_fallback(self):
+        for metadata in (None, {}, {'resourceTypes': None},
+                         {'resourceTypes': [{'resourceType': 'OpenShiftClusters', 'locations': ['East US 2']}]},
+                         {'resourceTypes': [{'resourceType': 'hcpOpenShiftClusters', 'locations': []}]}):
+            self.az.call.return_value = metadata
+            with self.subTest(metadata=metadata), self.assertRaisesRegex(provider.AzureError, 'did not advertise HCP regions'):
+                hcp.check_region(self.az, 'eastus2')
+        self.az.call.side_effect = provider.AzureError('AuthorizationFailed')
+        with self.assertRaisesRegex(provider.AzureError, 'AuthorizationFailed'):
+            hcp.check_region(self.az, 'eastus2')
 
     def test_asynchronous_credential_request_polls_location(self):
         class Response:
