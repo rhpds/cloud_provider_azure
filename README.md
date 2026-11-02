@@ -174,6 +174,15 @@ and its IPI state have been lost, recover the installer state before destruction
 the provider intentionally refuses to delete a remaining IPI group blindly.
 Do not put unrelated resources in deployment-owned groups.
 
+Provision retries may correct an archived region only after a read-only check
+confirms that the infrastructure, cluster and ARO-managed resource groups are
+all absent. Lifecycle/destroy jobs must use the original region. Other ownership
+settings remain fixed; this does not move a deployment between regions. Errors
+identify changed public input names and archived/requested values. Sandbox
+validation runs before writing the archive, so failed initialization does not
+record invalid settings. Keep the archive rather than deleting it to bypass a
+mismatch.
+
 `start`, `stop`, and `status` apply to the bastion and self-managed cluster VMs.
 For ARO they report cluster status but only start/deallocate the bastion.
 The lifecycle role defaults `azure_lifecycle_action` to the run's `ACTION`.

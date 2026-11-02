@@ -117,7 +117,52 @@ def main():
                 print('FAIL: ARO sizing case ' + name)
                 print(size_result.stdout + size_result.stderr)
                 return 1
+            if name == 'ownership-boundary' and not all(value in size_result.stdout for value in (
+                    'azure_infra_resource_group', legacy['settings']['infra_group'], 'different-infra')):
+                print('FAIL: ownership failure must report the changed public input and both values')
+                print(size_result.stdout + size_result.stderr)
+                return 1
             print('PASS: ARO sizing case ' + name)
+        # A failed earlier initialization may have left a region-only mismatch.
+        # Retarget only provision runs for which every deployment group is absent.
+        region_legacy = json.loads(json.dumps(legacy))
+        region_legacy['settings']['region'] = 'westeurope'
+        region_groups = [region_legacy['settings'][field] for field in ('infra_group', 'cluster_group')]
+        region_groups.append(region_legacy['settings']['cluster_group'] + '-managed')
+        region_cases = [('before-resources', [], 'provision', True),
+                        ('destroy-requires-original-region', [], 'destroy', False),
+                        ('status-requires-original-region', [], 'status', False)]
+        region_cases += [('existing-' + str(index), [group], 'provision', False)
+                         for index, group in enumerate(region_groups)]
+        for name, groups, action, expected_success in region_cases:
+            ownership_file.write_text(json.dumps(region_legacy))
+            state = json.loads(original_state)
+            state['groups'] = {group: {'tags': {'agnosticd_project': 'openshift-cluster-test'}} for group in groups}
+            state_file.write_text(json.dumps(state))
+            variables = dict(flat, ACTION=action, output_dir=str(output), ansible_python_interpreter=sys.executable)
+            variables_file = root / ('region-' + name + '.json')
+            variables_file.write_text(json.dumps(variables))
+            region_result = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook',
+                                            str(collection / 'tests/integration/initialize.yml'),
+                                            '-e', '@' + str(variables_file)],
+                                           cwd=collection, env=env, text=True, capture_output=True, check=False)
+            saved = json.loads(ownership_file.read_text())
+            final_state = json.loads(state_file.read_text())
+            if ((region_result.returncode == 0) != expected_success
+                    or final_state['groups'] != state['groups'] or final_state['cluster'] != state['cluster']
+                    or saved['resource_group_ids'] != region_legacy['resource_group_ids']
+                    or (expected_success and saved['settings']['region'] != 'eastus')
+                    or (not expected_success and saved != region_legacy)
+                    or 'synthetic-password' in region_result.stdout):
+                print('FAIL: region change case ' + name)
+                print(region_result.stdout + region_result.stderr)
+                return 1
+            if action != 'provision' and not all(value in region_result.stdout for value in (
+                    'azure_region', 'westeurope', 'eastus')):
+                print('FAIL: lifecycle region error must report archived and requested regions')
+                print(region_result.stdout + region_result.stderr)
+                return 1
+            print('PASS: region change case ' + name)
         state_file.write_text(original_state)
         # Exercise the actual protected asynchronous task and its public error handler.
         install_tasks = yaml.safe_load((collection / 'roles/host_ocp4_aro_install/tasks/main.yml').read_text())
@@ -167,7 +212,8 @@ def main():
         cases = [('flattened', flat, True), ('aliases', aliases, True),
                  ('nested-authoritative', authoritative, True), ('missing-secret', missing, False),
                  ('null-secret', null_password, False), ('no-mixing', incomplete_nested, False),
-                 ('malformed-nested', dict(flat, azure_sandbox=None), False)]
+                 ('malformed-nested', dict(flat, azure_sandbox=None), False),
+                 ('invalid-sandbox-region', dict(flat, azure_region='westeurope'), False)]
         for name, variables, expected_success in cases:
             case_output = root / name
             case_output.mkdir()
@@ -180,7 +226,8 @@ def main():
                             '-e', '@' + str(variables_file)]
             case_result = subprocess.run(case_command, env=env, cwd=collection, text=True,
                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
-            if (case_result.returncode == 0) != expected_success or 'synthetic-password' in case_result.stdout:
+            if ((case_result.returncode == 0) != expected_success or 'synthetic-password' in case_result.stdout
+                    or (not expected_success and (case_output / 'openshift-cluster_test_azure_ownership.json').exists())):
                 print('FAIL: credential normalization case ' + name)
                 print(case_result.stdout)
                 return 1

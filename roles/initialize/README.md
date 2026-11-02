@@ -76,6 +76,20 @@ Before a cluster exists, ARO master/worker sizes may change after a read-only
 absence check. For an existing cluster, provision rejects changed sizes and
 lifecycle/destroy retain the archived sizes. Other settings must still match.
 
+A provision retry may also correct a region archived by an earlier failed
+initialization, but only after read-only checks establish that the infrastructure,
+cluster and ARO-managed resource groups are all absent. An existing group or
+authorization error prevents that change. Subscription, project, group names,
+DNS ownership and the other recorded settings must still match. This does not
+move existing resources between regions. Lifecycle/destroy jobs must always use
+the original region; mismatch errors show the public input names and their
+archived/requested values without exposing credentials.
+
+Sandbox group/zone validation completes before the archive is written. A failed
+validation therefore cannot create a new ownership record or replace an existing
+one with invalid settings. Existing stale records can be corrected through the
+guarded provision retry above; deleting the archive is not required.
+
 Initialization verifies resources and writes the local ownership archive; it
 does not provision the bastion or OpenShift. Authentication and authorization
 errors remain failures rather than being interpreted as missing resources.

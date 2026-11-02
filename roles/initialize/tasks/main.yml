@@ -96,9 +96,44 @@
     - saved.subscription_id == azure_auth.subscription_id
     - saved.project == project_tag
     - >-
-      (saved.settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size']) | items2dict) ==
-      (azure_settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size']) | items2dict)
-    fail_msg: Deployment settings differ from archived ownership; restore original settings before continuing
+      (saved.settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size', 'region']) | items2dict) ==
+      (azure_settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size', 'region']) | items2dict)
+    - saved.settings.region == azure_settings.region or ACTION | default('provision') == 'provision'
+    fail_msg: |-
+      Deployment settings differ from archived ownership. Restore the original inputs for lifecycle/destroy jobs.
+      {% if saved.subscription_id != azure_auth.subscription_id %}
+      azure_subscription: archived={{ saved.subscription_id | to_json }}, requested={{ azure_auth.subscription_id | to_json }}
+      {% endif %}
+      {% if saved.project != project_tag %}
+      project_tag: archived={{ saved.project | to_json }}, requested={{ project_tag | to_json }}
+      {% endif %}
+      {% for field, variable in {
+        'sandbox_group': 'azure_resource_group', 'region': 'azure_region',
+        'infra_group': 'azure_infra_resource_group', 'cluster_group': 'azure_cluster_resource_group',
+        'cluster_name': 'aro_cluster_name', 'dns_zone': 'azure_dns_zone',
+        'method': 'host_ocp4_deploy_installation_method', 'identity_mode': 'aro_identity_mode',
+        'version': 'aro_version', 'worker_count': 'aro_worker_count', 'worker_disk': 'aro_worker_disk_size',
+        'vnet_cidr': 'aro_vnet_cidr', 'master_cidr': 'aro_master_subnet_cidr',
+        'worker_cidr': 'aro_worker_subnet_cidr', 'pod_cidr': 'aro_pod_cidr', 'service_cidr': 'aro_service_cidr'
+      }.items() %}
+      {% if saved.settings.get(field) != azure_settings.get(field) %}
+      {{ variable }}: archived={{ saved.settings.get(field) | to_json }}, requested={{ azure_settings.get(field) | to_json }}
+      {% endif %}
+      {% endfor %}
+      A provisioning run can change region only after verifying that all deployment resource groups are absent.
+
+- name: Verify deployment groups are absent before accepting a changed region
+  when:
+  - azure_ownership_stat.stat.exists
+  - saved.settings.region != azure_settings.region
+  vars:
+    saved: "{{ azure_ownership_slurp.content | b64decode | from_json }}"
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: check_region_change
+    auth: "{{ azure_auth }}"
+    settings: "{{ azure_settings }}"
+    config_dir: "{{ azure_cli_config_dir }}"
+    project: "{{ project_tag }}"
 
 - name: Preserve recorded ARO node sizes for lifecycle and destroy operations
   when:
@@ -124,6 +159,14 @@
     config_dir: "{{ azure_cli_config_dir }}"
     project: "{{ project_tag }}"
 
+- name: Verify sandbox resource group and delegated zone
+  agnosticd.cloud_provider_azure.azure_environment:
+    action: validate
+    auth: "{{ azure_auth }}"
+    settings: "{{ azure_settings }}"
+    config_dir: "{{ azure_cli_config_dir }}"
+    project: "{{ project_tag }}"
+
 - name: Record ownership boundaries for later lifecycle and destroy jobs
   ansible.builtin.copy:
     content: >-
@@ -137,11 +180,3 @@
          } | to_nice_json }}
     dest: "{{ output_dir }}/{{ config }}_{{ guid }}_azure_ownership.json"
     mode: '0600'
-
-- name: Verify sandbox resource group and delegated zone
-  agnosticd.cloud_provider_azure.azure_environment:
-    action: validate
-    auth: "{{ azure_auth }}"
-    settings: "{{ azure_settings }}"
-    config_dir: "{{ azure_cli_config_dir }}"
-    project: "{{ project_tag }}"

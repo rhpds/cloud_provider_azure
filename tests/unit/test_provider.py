@@ -211,6 +211,37 @@ class ProviderTests(unittest.TestCase):
             self.az.check_aro_size_change(self.s)
         self.assertFalse(self.az.changed)
 
+    def test_region_change_checks_all_deployment_groups_without_mutating_azure(self):
+        self.responses = [(1, 'ResourceGroupNotFound')] * 3
+        self.az.check_region_change(self.s)
+        self.assertEqual([call[call.index('--name') + 1] for call in self.calls],
+                         ['infra', 'cluster', 'cluster-managed'])
+        self.assertTrue(all(call[1:3] == ['group', 'show'] for call in self.calls))
+        self.assertFalse(self.az.changed)
+
+    def test_region_change_is_refused_when_any_deployment_group_remains(self):
+        for index, name in enumerate(('infra', 'cluster', 'cluster-managed')):
+            with self.subTest(group=name):
+                self.calls.clear()
+                self.responses = [(1, 'ResourceGroupNotFound')] * index + [
+                    (0, {'tags': {'agnosticd_project': 'project'}})]
+                with self.assertRaisesRegex(provider.AzureError, 'restore the archived region'):
+                    self.az.check_region_change(self.s)
+                self.assertEqual(len(self.calls), index + 1)
+                self.assertTrue(all(call[1:3] == ['group', 'show'] for call in self.calls))
+                self.assertFalse(self.az.changed)
+
+    def test_region_change_never_adopts_unowned_groups_or_ignores_authorization_failures(self):
+        for response, message in (((0, {'tags': {'agnosticd_project': 'other'}}), 'unowned'),
+                                  ((1, 'ERROR: (AuthorizationFailed) Access denied.'), 'AuthorizationFailed')):
+            with self.subTest(message=message):
+                self.calls.clear()
+                self.responses = [response]
+                with self.assertRaisesRegex(provider.AzureError, message):
+                    self.az.check_region_change(self.s)
+                self.assertEqual(len(self.calls), 1)
+                self.assertFalse(self.az.changed)
+
     def test_overlapping_aro_subnets_fail_before_resource_creation(self):
         self.s.update(vnet_cidr='10.0.0.0/22', master_cidr='10.0.0.0/23',
                       worker_cidr='10.0.0.0/23', pod_cidr='10.128.0.0/14', service_cidr='172.30.0.0/16')

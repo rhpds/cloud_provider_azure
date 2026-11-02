@@ -135,6 +135,14 @@ class Azure:
                                  'set aro_master_vm_size and aro_worker_vm_size to their recorded values '
                                  'for an existing cluster')
 
+    def check_region_change(self, settings):
+        # A failed initialization may have archived settings before any Azure
+        # deployment existed. Never retarget resources left in the old region.
+        for name in (settings['infra_group'], settings['cluster_group'], settings['cluster_group'] + '-managed'):
+            if self.group(name, settings['region']):
+                raise AzureError('Cannot change Azure region while a deployment resource group exists; '
+                                 'restore the archived region and complete destruction first: ' + name)
+
     def preflight(self, s):
         for provider in ('Microsoft.Compute', 'Microsoft.Storage', 'Microsoft.Network',
                          'Microsoft.Authorization', 'Microsoft.ManagedIdentity', 'Microsoft.RedHatOpenShift'):

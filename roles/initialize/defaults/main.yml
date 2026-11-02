@@ -52,6 +52,10 @@ azure_resource_group: "{{ undef(hint='Supply the existing sandbox resource group
 # azure_region (string): Azure location code, e.g. eastus, not 'East US'. For a
 # nested payload the credential entry is authoritative. Current validation also
 # requires the sandbox resource group's location to equal this value.
+# A provision retry can change an archived region only after read-only checks
+# prove that the infrastructure, cluster and ARO-managed groups are all absent.
+# Lifecycle/destroy must use the archived region. Failed sandbox validation does
+# not create or replace the ownership archive.
 azure_region: "{{ undef(hint='Supply the Azure location code, for example eastus') }}"
 
 # DNS configuration. The zone must already exist in the sandbox resource group
