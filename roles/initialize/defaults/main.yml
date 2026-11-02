@@ -51,8 +51,8 @@ azure_tenant_id: "{{ undef(hint='Optional alias for azure_tenant') }}"
 # group. The group and its delegated DNS zone are preserved during destruction.
 azure_resource_group: "{{ undef(hint='Supply the existing sandbox resource group name') }}"
 # azure_region (string): Azure location code, e.g. eastus, not 'East US'. For a
-# nested payload the credential entry is authoritative. Current validation also
-# requires the sandbox resource group's location to equal this value.
+# nested payload the credential entry is authoritative. This selects where new
+# deployment resources run, independently of the sandbox group's metadata location.
 # A provision retry can change an archived region only after read-only checks
 # prove that the infrastructure, cluster and ARO-managed groups are all absent.
 # Lifecycle/destroy must use the archived region. Failed sandbox validation does

@@ -213,7 +213,9 @@ def main():
                  ('nested-authoritative', authoritative, True), ('missing-secret', missing, False),
                  ('null-secret', null_password, False), ('no-mixing', incomplete_nested, False),
                  ('malformed-nested', dict(flat, azure_sandbox=None), False),
-                 ('invalid-sandbox-region', dict(flat, azure_region='westeurope'), False)]
+                 ('different-sandbox-region', dict(flat, azure_region='westeurope', expected_region='westeurope'), True),
+                 ('nested-different-sandbox-region', dict(flat, expected_region='eastus2', azure_sandbox={
+                     'credentials': [dict(nested['credentials'][0], azure_region='eastus2')]}), True)]
         for name, variables, expected_success in cases:
             case_output = root / name
             case_output.mkdir()
@@ -235,8 +237,8 @@ def main():
         # Exercise real HCP normalization/archives through the module without any ARM HTTP calls.
         hcp_output = root / 'hcp-output'
         hcp_output.mkdir()
-        hcp_vars = dict(flat, azure_region='westeurope', aro_deploy_hcp=True, expected_hcp=True,
-                        expected_region='westeurope', expected_worker_count=2, output_dir=str(hcp_output),
+        hcp_vars = dict(flat, azure_region='eastus2', aro_deploy_hcp=True, expected_hcp=True,
+                        expected_region='eastus2', expected_worker_count=2, output_dir=str(hcp_output),
                         ansible_python_interpreter=sys.executable)
         hcp_archive = hcp_output / 'openshift-cluster_test_azure_ownership.json'
         for label, overrides, success in [('new-hcp', {}, True), ('reuse-hcp', {}, True),
@@ -246,7 +248,7 @@ def main():
             before = hcp_archive.read_text() if hcp_archive.exists() else None
             run = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook',
                                   str(collection / 'tests/integration/initialize.yml'), '-e', '@' + str(variables_file)],
-                                 cwd=collection, env=dict(env, AZURE_TEST_REGION='westeurope'),
+                                 cwd=collection, env=dict(env, AZURE_TEST_REGION='eastus'),
                                  text=True, capture_output=True, check=False)
             if ((run.returncode == 0) != success or (not success and hcp_archive.read_text() != before)
                     or 'hcp_recover_vault' in json.loads(hcp_archive.read_text())['settings']):

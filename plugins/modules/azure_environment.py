@@ -32,7 +32,7 @@ options:
         description: Existing sandbox resource group, retained for the normalized role contract.
         type: str
       azure_region:
-        description: Sandbox location code, retained for the normalized role contract.
+        description: Deployment location code supplied with sandbox credentials, retained for the normalized role contract.
         type: str
   settings:
     description:
@@ -183,9 +183,9 @@ def execute(az, action, s, template):
     if action == 'validate':
         if s.get('hcp'):
             HCP(az, s).validate()
-        group = az.call('group', 'show', '-n', s['sandbox_group'])
-        if group['location'].lower() != s['region'].lower():
-            raise AzureError('Sandbox resource group location does not match azure_region')
+        # The sandbox group's location stores its metadata; deployment resources
+        # may use another region. Still require access to the supplied group/zone.
+        az.call('group', 'show', '-n', s['sandbox_group'])
         zone = az.call('network', 'dns', 'zone', 'show', '-g', s['sandbox_group'], '-n', s['dns_zone'])
         return dict(zone=zone)
     if action == 'installer_prepare':

@@ -248,7 +248,8 @@ logical zone and integration CIDR options. Initialization queries Azure provider
 metadata for HCP-specific regions immediately after login, before reading ownership
 archives or querying sandbox resources. Unsupported regions fail with the supported
 codes returned by Azure; the collection has no hardcoded region allowlist. The
-existing sandbox-group region check still applies. HCP quota preflight requires
+sandbox group's metadata location may differ from the deployment region; its
+existing group and DNS zone are retained. HCP quota preflight requires
 at least 20 available regional/worker-family cores, or workers plus surge when
 larger. No control-plane/bootstrap cores are allocated in this subscription.
 

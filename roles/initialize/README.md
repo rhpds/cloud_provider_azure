@@ -64,9 +64,10 @@ mapping contains only the six documented credential fields. This keeps provider
 module validation and secret handling independent of sandbox-specific metadata.
 
 Set `azure_dns_zone` to the existing delegated zone when it differs from
-`<guid>.azure.redhatworkshops.io`. Current validation requires the sandbox resource
-group's location to match `azure_region`. This is a collection validation rule;
-setting a different region alone does not bypass it.
+`<guid>.azure.redhatworkshops.io`. `azure_region` selects the location of new
+deployment resources. The existing sandbox group's metadata location may differ;
+the role verifies access to that group and its DNS zone without relocating them.
+See [Azure's resource group location documentation](https://learn.microsoft.com/azure/azure-resource-manager/management/overview#what-location-should-i-use-for-my-resource-group).
 
 For ARO, set `host_ocp4_deploy_installation_method: aro` and an exact `aro_version`
 returned by `az aro get-versions --location <region>`. The `aro_*` defaults specify

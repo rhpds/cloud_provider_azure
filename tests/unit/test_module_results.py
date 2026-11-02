@@ -3,7 +3,7 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from ansible.module_utils.common.arg_spec import ModuleArgumentSpecValidator
 from ansible.module_utils.common.parameters import remove_values
@@ -24,6 +24,21 @@ with patch.dict(sys.modules, {
 
 
 class ModuleResultTests(unittest.TestCase):
+    def test_sandbox_metadata_location_can_differ_while_group_and_dns_access_are_required(self):
+        settings = dict(region='eastus2', sandbox_group='sandbox', dns_zone='test.example')
+        zone = {'name': 'test.example'}
+        az = Mock()
+        az.call.side_effect = [{'location': 'eastus'}, zone]
+        self.assertEqual(module.execute(az, 'validate', settings, None), {'zone': zone})
+        self.assertEqual(az.call.call_args_list, [call('group', 'show', '-n', 'sandbox'),
+            call('network', 'dns', 'zone', 'show', '-g', 'sandbox', '-n', 'test.example')])
+        for results in ([provider.AzureError('ResourceGroupNotFound')],
+                        [provider.AzureError('AuthorizationFailed')],
+                        [{'location': 'eastus'}, provider.AzureError('ZoneNotFound')]):
+            with self.subTest(results=results), self.assertRaises(provider.AzureError):
+                az.call.side_effect = results
+                module.execute(az, 'validate', settings, None)
+
     def test_public_settings_do_not_corrupt_urls_or_returned_credentials(self):
         for pull_secret in ('{"auths":{"registry.example":{"auth":"pull-secret-token"}}}',
                             {'auths': {'registry.example': {'auth': 'pull-secret-token'}}}):
