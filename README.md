@@ -82,6 +82,12 @@ extra sandbox metadata is ignored. Module redaction protects secret fields rathe
 than the entire auth/settings dictionaries, keeping public API URLs and opaque
 returned credentials intact. Task-level `no_log` protects ARO access operations.
 
+CLI resource operations and access-token requests select the supplied subscription
+explicitly. `az account list-locations` uses the current account and rejects the
+`--subscription` option, so the wrapper first runs `az account set` with the supplied
+subscription inside its private `AZURE_CONFIG_DIR`. This affects only the
+deployment's isolated CLI session. A selection failure stops the location lookup.
+
 The existing zone defaults to `<guid>.azure.redhatworkshops.io` in the sandbox
 resource group. Override `azure_root_dns_zone` or `azure_dns_zone` as appropriate.
 The sandbox must delegate this zone from its parent. No parent-zone credentials

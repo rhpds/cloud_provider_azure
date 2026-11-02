@@ -39,8 +39,14 @@ class Azure:
         self.changed = False
 
     def call(self, *args, missing=False):
+        uses_current_subscription = args[:2] == ('account', 'list-locations')
+        if uses_current_subscription:
+            # list-locations rejects --subscription and uses the CLI's current
+            # account. Select the supplied subscription in our private session;
+            # account set receives the explicit subscription argument below.
+            self.call('account', 'set')
         cmd = ['az'] + [str(a) for a in args]
-        if args[:1] != ('login',) and args[:1] != ('version',):
+        if args[:1] not in (('login',), ('version',)) and not uses_current_subscription:
             cmd += ['--subscription', self.auth['subscription_id']]
         cmd += ['--only-show-errors', '--output', 'json']
         result = self.runner(cmd, env=self.env, text=True, capture_output=True)

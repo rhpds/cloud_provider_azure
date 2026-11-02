@@ -45,6 +45,44 @@ class ProviderTests(unittest.TestCase):
         self.assertIn('--password=SECRET', self.calls[0])
         self.assertNotIn('--subscription', self.calls[0])
 
+    def test_account_locations_selects_subscription_before_using_current_account_syntax(self):
+        locations = [{'name': 'eastus2', 'availabilityZoneMappings': [
+            {'logicalZone': '1', 'physicalZone': 'eastus2-az2'}]}]
+        selected = {'subscription': 'unrelated-default'}
+        environments = []
+
+        def account_cli(command, **kwargs):
+            self.calls.append(command)
+            environments.append(kwargs['env'])
+            if command[:3] == ['az', 'account', 'set']:
+                self.assertEqual(command.count('--subscription'), 1)
+                selected['subscription'] = command[command.index('--subscription') + 1]
+                return SimpleNamespace(returncode=0, stdout='', stderr='')
+            if '--subscription' in command:
+                return SimpleNamespace(returncode=2, stdout='', stderr='ERROR: unrecognized arguments: --subscription')
+            self.assertEqual(command[:3], ['az', 'account', 'list-locations'])
+            self.assertEqual(selected['subscription'], self.auth['subscription_id'])
+            return SimpleNamespace(returncode=0, stdout=json.dumps(locations), stderr='')
+
+        self.az.runner = account_cli
+        self.assertEqual(self.az.call('account', 'list-locations'), locations)
+        self.assertEqual(len(self.calls), 2)
+        self.assertTrue(all(env['AZURE_CONFIG_DIR'] == self.tmp.name for env in environments))
+        self.assertFalse(self.az.changed)
+
+    def test_account_selection_failure_stops_location_lookup(self):
+        self.responses = [(1, 'AuthorizationFailed')]
+        with self.assertRaisesRegex(provider.AzureError, 'AuthorizationFailed'):
+            self.az.call('account', 'list-locations')
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0][:3], ['az', 'account', 'set'])
+
+    def test_access_token_command_retains_explicit_subscription(self):
+        self.responses = [(0, {'accessToken': 'synthetic-token'})]
+        token = self.az.call('account', 'get-access-token', '--resource', 'https://management.azure.com/')
+        self.assertEqual(token['accessToken'], 'synthetic-token')
+        self.assertEqual(self.calls[0][self.calls[0].index('--subscription') + 1], self.auth['subscription_id'])
+
     def test_auth_failure_never_means_missing(self):
         self.responses = [(1, 'Forbidden SECRET')]
         with self.assertRaisesRegex(provider.AzureError, 'Forbidden <redacted>'):
