@@ -79,12 +79,12 @@ if args[:2] == ['aro', 'create']:
     if '--pull-secret' in args:
         assert json.loads(Path(value('--pull-secret')).read_text()) == {'auths': {}}
     assert '--enable-managed-identity' in args or ('--client-id' in args and '--client-secret' in args)
-    s['cluster']={'provisioningState': 'Succeeded', 'apiserverProfile': {'url': 'https://api.example.test:6443'}}
+    s['cluster']={'provisioningState': 'Succeeded', 'apiserverProfile': {'url': 'https://api.test-cluster.eastus.aroapp.io:6443/'}}
     answer(s['cluster'])
 if args[:2] == ['aro', 'delete']:
     s['cluster']=None
     answer(None)
-if args[:2] == ['aro', 'list-credentials']: answer({'kubeadminUsername': 'kubeadmin', 'kubeadminPassword': 'synthetic'})
+if args[:2] == ['aro', 'list-credentials']: answer({'kubeadminUsername': 'kubeadmin', 'kubeadminPassword': 'synthetic-aro-128-3-password'})
 if args[:3] in (['network', 'vnet', 'create'], ['network','vnet','subnet']): answer({})
 print('Unhandled fake CLI operation: ' + repr(args), file=sys.stderr)
 sys.exit(2)

@@ -1,0 +1,26 @@
+---
+- name: Validate OpenShift client target architecture
+  ansible.builtin.assert:
+    that:
+    - install_cli_host_setup.ansible_facts.ansible_architecture in ['x86_64', 'aarch64']
+    fail_msg: ARO client installation supports x86_64 and aarch64 bastions
+
+- name: Create OpenShift client installation directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ aro_client_install_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Install client matching the ARO release
+  become: true
+  ansible.builtin.unarchive:
+    src: "{{ aro_client_download_url }}"
+    remote_src: true
+    dest: "{{ aro_client_install_dir }}"
+    include: [oc, kubectl]
+    mode: '0755'
+  register: azure_aro_client_download
+  until: azure_aro_client_download is succeeded
+  retries: 10
+  delay: 30

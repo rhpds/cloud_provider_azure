@@ -40,32 +40,52 @@
           The protected provisioning operation failed; no credential-bearing output is displayed.
           {% endif %}
   - name: Install OpenShift client
-    ansible.builtin.include_role:
-      name: host_ocp4_installer
-      tasks_from: install_installer.yml
-    vars:
-      host_ocp4_installer_version: "{{ hostvars.localhost.azure_settings.version }}"
+    ansible.builtin.include_tasks: install_client.yml
   - name: Create cluster authentication directory
     ansible.builtin.file:
       path: "/home/{{ ansible_user }}/{{ cluster_name }}/auth"
       state: directory
       mode: '0700'
   - name: Log into ARO
-    ansible.builtin.command:
-      argv:
-      - oc
-      - login
-      - "{{ azure_aro_result.cluster.apiserverProfile.url }}"
-      - --username
-      - "{{ azure_aro_result.credentials.kubeadminUsername }}"
-      - "--password={{ azure_aro_result.credentials.kubeadminPassword }}"
-      - "--kubeconfig=/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeconfig"
-    register: azure_aro_login
-    until: azure_aro_login is succeeded
-    retries: 30
-    delay: 20
-    changed_when: false
-    no_log: true
+    block:
+    - name: Authenticate using protected ARO credentials
+      ansible.builtin.command:
+        argv:
+        - "{{ aro_client_install_dir }}/oc"
+        - login
+        - "{{ azure_aro_result.cluster.apiserverProfile.url }}"
+        - --username
+        - "{{ azure_aro_result.credentials.kubeadminUsername }}"
+        - "--password={{ azure_aro_result.credentials.kubeadminPassword }}"
+        - "--kubeconfig=/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeconfig"
+      register: azure_aro_login
+      until: azure_aro_login is succeeded
+      retries: 30
+      delay: 20
+      changed_when: false
+      no_log: true
+    rescue:
+    - name: Report non-secret ARO login diagnostics
+      vars:
+        _login_error: "{{ azure_aro_login.stderr | default('') | lower }}"
+      ansible.builtin.fail:
+        msg: >-
+          ARO is ready, but OpenShift client login failed.
+          {% if '********' in azure_aro_result.cluster.apiserverProfile.url or
+                'VALUE_SPECIFIED_IN_NO_LOG_PARAMETER' in azure_aro_result.cluster.apiserverProfile.url %}
+          The returned API URL was corrupted by secret redaction; update the Azure collection and retry.
+          {% elif 'x509' in _login_error or 'certificate' in _login_error %}
+          TLS certificate verification failed. Check the API certificate and trusted CA configuration.
+          {% elif 'no such host' in _login_error or 'name resolution' in _login_error %}
+          API or authentication endpoint DNS resolution failed on the bastion.
+          {% elif 'unauthorized' in _login_error or '401' in _login_error or 'incorrect' in _login_error %}
+          The authentication endpoint rejected the supplied credentials.
+          {% elif 'timeout' in _login_error or 'timed out' in _login_error or 'connection refused' in _login_error %}
+          A connection to the API or authentication endpoint failed on the bastion.
+          {% else %}
+          The protected login command returned a non-zero exit code; check API and authentication endpoint access.
+          {% endif %}
+          Credentials and raw command output remain hidden.
   - name: Store kubeadmin password
     ansible.builtin.copy:
       content: "{{ azure_aro_result.credentials.kubeadminPassword }}"

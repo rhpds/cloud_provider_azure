@@ -137,6 +137,9 @@
       that:
       - aro_install_results.results[0].changed
       - not aro_install_results.results[1].changed
+      - aro_install_results.results[0].cluster.apiserverProfile.url == 'https://api.test-cluster.eastus.aroapp.io:6443/'
+      - aro_install_results.results[0].credentials.kubeadminUsername == 'kubeadmin'
+      - aro_install_results.results[0].credentials.kubeadminPassword == 'synthetic-aro-128-3-password'
   - name: Destroy ARO
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.host_ocp4_aro_destroy

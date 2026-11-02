@@ -50,6 +50,10 @@ is invalid. The flat `azure_subscription_id` and `azure_tenant_id` aliases apply
 only when their corresponding canonical variables are undefined. Neither form
 uses an ambient `az login` session as its authentication source.
 
+Nested sandbox metadata is accepted but excluded from `azure_auth`. The normalized
+mapping contains only the six documented credential fields. This keeps provider
+module validation and secret handling independent of sandbox-specific metadata.
+
 Set `azure_dns_zone` to the existing delegated zone when it differs from
 `<guid>.azure.redhatworkshops.io`. Current validation requires the sandbox resource
 group's location to match `azure_region`. This is a collection validation rule;

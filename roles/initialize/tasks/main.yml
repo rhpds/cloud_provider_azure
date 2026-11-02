@@ -20,7 +20,10 @@
 - name: Normalize nested sandbox authentication
   when: azure_sandbox is defined
   ansible.builtin.set_fact:
-    azure_auth: "{{ azure_sandbox.credentials[0] }}"
+    azure_auth: >-
+      {{ azure_sandbox.credentials[0] | dict2items
+         | selectattr('key', 'in', ['subscription_id', 'app_id', 'password', 'tenant', 'resource_group', 'azure_region'])
+         | items2dict }}
   no_log: true
 
 - name: Normalize flattened sandbox authentication

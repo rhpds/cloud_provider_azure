@@ -30,6 +30,7 @@ host_ocp4_deploy_installation_method: openshift_install
 #     tenant: tenant UUID or domain
 #     resource_group: existing sandbox resource group containing the DNS zone
 #     azure_region: Azure location code, e.g. eastus
+# Additional sandbox metadata is ignored when constructing normalized azure_auth.
 azure_sandbox: "{{ undef(hint='Optional complete sandbox payload; otherwise supply flattened Azure credentials') }}"
 # azure_subscription (string): subscription UUID; azure_subscription_id is an
 # accepted alias only when this canonical variable is undefined.

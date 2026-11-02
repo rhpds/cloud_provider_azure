@@ -12,8 +12,9 @@ Run `initialize` on localhost first and provision/configure the bastion. The
 dispatcher includes this role inside a block delegated to the first bastion;
 direct callers must provide equivalent delegation or run on the bastion. The
 target must support the RHEL CLI installer and `become` for package operations.
-The shared v2 roles `host_ocp4_installer` and `host_ocp4_installer_info` must be
-available. The selected ARO version, region, SKU availability, Azure permissions
+The shared v2 `host_ocp4_installer_info` role must be available for publishing
+access metadata. ARO does not invoke `host_ocp4_installer` or download/run
+`openshift-install`. The selected ARO version, region, SKU availability, Azure permissions
 and regional/family core quotas must permit deployment.
 
 ## Variables
@@ -56,7 +57,15 @@ Do not debug `azure_aro_result` or the login result to bypass that protection.
 
 ## Access artifacts and cleanup
 
-The shared client installer uses the ARO version for `oc`. After successful
+The collection's `install_client.yml` tasks download only `oc` and `kubectl` for
+the exact ARO version, independently of `host_ocp4_installer_version` and other
+self-managed installer options. `aro_client_download_url` selects the official
+HTTPS archive for the bastion's architecture/OS by default; an explicit override
+can point to a trusted mirror or an existing archive on that bastion. The default
+`aro_client_install_dir` is `/usr/local/bin`. Login invokes that exact `oc` path
+so a different client in `PATH` cannot take precedence.
+
+After successful
 `oc login`, the role stores kubeconfig and kubeadmin password under the bastion
 authentication directory, exports them to these controller files and protects
 them with mode `0600`:
@@ -72,6 +81,15 @@ The temporary bastion Azure CLI state at `/home/<ansible_user>/.azure-agnosticd`
 is removed in an `always` block, on success or failure. Persistent kubeconfigs and
 the exported password are intentionally retained. Destruction later runs
 `host_ocp4_aro_destroy` on the controller before bastion infrastructure cleanup.
+
+The provider module protects the principal password and optional pull secret as
+individual argument fields. Whole settings mappings must not be marked secret:
+Ansible also removes those values from returned URLs and passwords, which makes
+connection data unusable. ARO provisioning/login tasks retain task-level `no_log`
+protection for returned kubeadmin credentials. On login failure, the role reports
+a safe category (TLS, DNS, rejected credentials, connection or corrupted URL)
+without printing the raw command output or credentials. TLS verification stays
+enabled.
 
 ```yaml
 - name: Install through the normal v2 dispatcher

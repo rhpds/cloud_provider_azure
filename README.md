@@ -76,6 +76,10 @@ If `azure_sandbox` is supplied, that payload is authoritative and must be
 complete. Missing fields are not filled from flattened credentials or ambient
 sessions. Without `azure_sandbox`, the flattened variables are normalized to the
 same internal authentication/settings contract for provision, destroy and lifecycle.
+Only the six documented credential fields enter the normalized auth mapping;
+extra sandbox metadata is ignored. Module redaction protects secret fields rather
+than the entire auth/settings dictionaries, keeping public API URLs and opaque
+returned credentials intact. Task-level `no_log` protects ARO access operations.
 
 The existing zone defaults to `<guid>.azure.redhatworkshops.io` in the sandbox
 resource group. Override `azure_root_dns_zone` or `azure_dns_zone` as appropriate.
@@ -116,6 +120,12 @@ optional. Defaults are three workers, D8s_v5 control plane, D4s_v5 workers and
 VM SKU restrictions and regional/family core quotas, allowing an extra control
 plane-sized bootstrap VM. Azure CLI validates ARO permissions during creation.
 Failed clusters require diagnosis and explicit destruction before recreation.
+ARO installs only `oc` and `kubectl`, using the exact `aro_version` client archive.
+It does not call the shared self-managed installer role or download
+`openshift-install`; `host_ocp4_installer_version` has no effect on this client.
+See the ARO role's commented defaults for `aro_client_download_url` and
+`aro_client_install_dir`. Failed logins report a safe error category while
+credentials and raw output stay hidden; TLS verification remains enabled.
 Preflight errors report the selected region and node sizes, SKU restriction
 reasons, and required/available core quota while credentials remain protected.
 Changing VM sizes cannot bypass subscription restrictions or family quota limits.

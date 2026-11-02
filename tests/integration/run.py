@@ -207,7 +207,7 @@ def main():
         null_password = dict(flat, azure_service_principal_password=None)
         nested = {'credentials': [dict(subscription_id='synthetic-subscription', app_id='synthetic-app',
                                       password='synthetic-password', tenant='synthetic-tenant',
-                                      resource_group='sandbox', azure_region='eastus')]}
+                                      resource_group='sandbox', azure_region='eastus', sandbox_id='ignored-metadata')]}
         authoritative = dict(flat, azure_sandbox=nested, azure_service_principal_id='unused-flat-app')
         cases = [('flattened', flat, True), ('aliases', aliases, True),
                  ('nested-authoritative', authoritative, True), ('missing-secret', missing, False),
