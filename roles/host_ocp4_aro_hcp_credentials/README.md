@@ -14,6 +14,7 @@ automatically for HCP. To refresh an existing deployment, initialize the provide
 discover its bastion inventory and restore SSH configuration, then include:
 
 ```yaml
+
 - name: Renew temporary administrative access
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.host_ocp4_aro_hcp_credentials
@@ -28,7 +29,7 @@ CLI access, not an OIDC identity or a kubeadmin password.
 The kubeconfig is saved to `/home/<ansible_user>/<cluster_name>/auth/kubeconfig`
 for shared v2 workloads and the login user's `.kube/config`, optionally copied
 to the existing student account, and exported to
-`<output_dir>/<config>_<guid>_kubeconfig`. Files have mode 0600, directories 0700.
+`<output_dir>/<config>_<guid>_kubeconfig`. Files have mode u=rw,go=, directories u=rwx,go=.
 Expiry is recorded in `<config>_<guid>_hcp_credentials.json` and user data.
 Refresh replaces all these copies. Treat the kubeconfig as a secret and refresh
 it before running later workloads that require access. No automatic background

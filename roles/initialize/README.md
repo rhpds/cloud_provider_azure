@@ -84,7 +84,7 @@ The CLI state directory contains authentication material and stays private.
 
 The file `<output_dir>/<config>_<guid>_azure_ownership.json` records subscription,
 project tag, exact group names/IDs, DNS record identity and non-secret settings.
-It is written with mode `0600`. Keep the original variables and archive for
+It is written with mode `u=rw,go=`. Keep the original variables and archive for
 subsequent lifecycle/destroy runs. Changes to ownership boundaries are rejected.
 Before a cluster exists, ARO master/worker sizes may change after a read-only
 absence check. For an existing cluster, provision rejects changed sizes and
@@ -111,11 +111,13 @@ errors remain failures rather than being interpreted as missing resources.
 ## Example
 
 ```yaml
+
 - name: Initialize the Azure deployment
   hosts: localhost
   connection: local
   gather_facts: false
   tasks:
+
   - name: Normalize credentials and establish ownership
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.initialize

@@ -1,4 +1,5 @@
 ---
+
 - name: Delete ARO and its owned infrastructure from controller
   delegate_to: localhost
   agnosticd.cloud_provider_azure.azure_environment:

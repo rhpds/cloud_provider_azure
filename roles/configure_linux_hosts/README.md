@@ -25,6 +25,7 @@ controller and follow the shared role's options when choosing a target account.
 The shared role and any privileges it requires must be supplied by v2.
 
 ```yaml
+
 - name: Wait for and configure bastion access
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.configure_linux_hosts

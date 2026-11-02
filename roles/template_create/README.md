@@ -15,6 +15,7 @@ Choose bastion options through `template_generate` rather than editing the ARM
 mapping or normalized settings directly.
 
 ```yaml
+
 - name: Deploy the rendered bastion infrastructure
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.template_create

@@ -1,16 +1,19 @@
 ---
+
 - name: Gather distribution facts for Azure CLI repository selection
   delegate_facts: true
   ansible.builtin.setup:
     gather_subset:
     - min
   register: install_cli_host_setup
+
 - name: Validate supported Azure CLI host distribution
   ansible.builtin.assert:
     that:
     - install_cli_host_setup.ansible_facts.ansible_os_family == 'RedHat'
     - install_cli_host_setup.ansible_facts.ansible_distribution_major_version | int in [8, 9, 10]
     fail_msg: Azure CLI installation requires a RHEL-compatible 8, 9 or 10 host
+
 - name: Add Microsoft signing key
   become: true
   ansible.builtin.rpm_key:
@@ -19,6 +22,7 @@
         'microsoft-2025.asc' if install_cli_host_setup.ansible_facts.ansible_distribution_major_version | int >= 10
         else 'microsoft.asc' }}
     state: present
+
 - name: Configure Azure CLI repository
   become: true
   ansible.builtin.yum_repository:
@@ -32,6 +36,7 @@
       https://packages.microsoft.com/keys/{{
         'microsoft-2025.asc' if install_cli_host_setup.ansible_facts.ansible_distribution_major_version | int >= 10
         else 'microsoft.asc' }}
+
 - name: Install pinned Azure CLI
   become: true
   ansible.builtin.dnf:

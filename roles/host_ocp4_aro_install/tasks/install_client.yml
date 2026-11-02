@@ -1,4 +1,5 @@
 ---
+
 - name: Validate OpenShift client target architecture
   ansible.builtin.assert:
     that:
@@ -10,7 +11,7 @@
   ansible.builtin.file:
     path: "{{ aro_client_install_dir }}"
     state: directory
-    mode: '0755'
+    mode: u=rwx,go=rx
 
 - name: Install client matching the ARO release
   become: true
@@ -19,7 +20,7 @@
     remote_src: true
     dest: "{{ aro_client_install_dir }}"
     include: [oc, kubectl]
-    mode: '0755'
+    mode: u=rwx,go=rx
   register: azure_aro_client_download
   until: azure_aro_client_download is succeeded
   retries: 10

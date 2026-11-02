@@ -1,4 +1,5 @@
 ---
+
 - name: Create or verify owned empty installer resource group
   agnosticd.cloud_provider_azure.azure_environment:
     action: installer_prepare

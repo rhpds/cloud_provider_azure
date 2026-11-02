@@ -31,6 +31,7 @@ GPG checks remain enabled. Reusing the repository name replaces the old
 `yumrepos/azure-cli` URL on reruns and DNF metadata is refreshed before install.
 
 ```yaml
+
 - name: Install the Azure CLI on the current bastion
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.install_cli

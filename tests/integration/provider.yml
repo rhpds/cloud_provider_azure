@@ -1,4 +1,5 @@
 ---
+
 - name: Exercise collection roles and module with a stateful fake CLI
   hosts: localhost
   connection: local
@@ -23,21 +24,25 @@
         resource_group: sandbox
         azure_region: eastus
   tasks:
+
   - name: Initialize
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.initialize
+
   - name: Render Azure installer platform
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.installer_platform
     vars:
       control_plane_instance_type: Standard_D8s_v3
       worker_instance_type: Standard_D4s_v3
+
   - name: Verify installer platform ownership and DNS contract
     ansible.builtin.assert:
       that:
       - (host_ocp4_installer_platform_fragment | from_yaml).azure.resourceGroupName == azure_settings.cluster_group
       - (host_ocp4_installer_platform_fragment | from_yaml).azure.baseDomainResourceGroupName == 'sandbox'
       - (host_ocp4_installer_control_plane_platform_fragment | from_yaml).azure.type == 'Standard_D8s_v3'
+
   - name: Render full installer configuration
     when: v2_install_config_template is defined
     vars:
@@ -53,6 +58,7 @@
         content: "{{ 'ssh-rsa synthetic' | b64encode }}"
     ansible.builtin.set_fact:
       integration_install_config: "{{ lookup('ansible.builtin.template', v2_install_config_template) | from_yaml }}"
+
   - name: Verify rendered installer configuration
     when: v2_install_config_template is defined
     ansible.builtin.assert:
@@ -60,12 +66,15 @@
       - integration_install_config.platform.azure.resourceGroupName == azure_settings.cluster_group
       - integration_install_config.controlPlane.platform.azure.type == 'Standard_D8s_v3'
       - integration_install_config.compute[0].platform.azure.type == 'Standard_D4s_v3'
+
   - name: Render ARM template
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.template_generate
+
   - name: Verify default RHEL 9 bastion image
     ansible.builtin.assert:
       that: azure_arm_template.resources[-1].properties.storageProfile.imageReference.sku == '9-lvm-gen2'
+
   - name: Render ARM template with RHEL 10 image override
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.template_generate
@@ -75,6 +84,7 @@
         offer: RHEL
         sku: 10-lvm-gen2
         version: latest
+
   - name: Verify RHEL 10 override reaches ARM image reference
     ansible.builtin.assert:
       that:
@@ -82,21 +92,27 @@
       - azure_arm_template.resources[-1].properties.storageProfile.imageReference.offer == 'RHEL'
       - azure_arm_template.resources[-1].properties.storageProfile.imageReference.sku == '10-lvm-gen2'
       - azure_arm_template.resources[-1].properties.storageProfile.imageReference.version == 'latest'
+
   - name: Provision infrastructure
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.template_create
+
   - name: Retry provision
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.template_create
+
   - name: Confirm provision is reused
     ansible.builtin.assert:
       that: not azure_result.changed
+
   - name: Discover inventory
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.create_inventory
+
   - name: Verify bastion group
     ansible.builtin.assert:
       that: groups.bastions == ['bastion-test']
+
   - name: Verify inventory selects the provision key through the shared SSH configuration
     when: v2_install_config_template is defined
     vars:
@@ -104,9 +120,11 @@
       ansible_user: azure
       ssh_provision_key_path: "{{ output_dir }}/synthetic-ssh-key"
     block:
+
     - name: Generate v2 SSH configuration
       ansible.builtin.include_role:
         name: infra_common_ssh_config_generate
+
     - name: Resolve effective SSH settings for the Ansible connection target without connecting
       ansible.builtin.command:
         argv:
@@ -117,12 +135,14 @@
         - "{{ hostvars['bastion-test'].ansible_host | default('bastion-test') }}"
       register: azure_test_ssh_settings
       changed_when: false
+
     - name: Verify provision key, username and DNS target are selected
       ansible.builtin.assert:
         that:
         - "('identityfile ' ~ ssh_provision_key_path) in azure_test_ssh_settings.stdout_lines"
         - "'user azure' in azure_test_ssh_settings.stdout_lines"
         - "'hostname bastion.test.azure.redhatworkshops.io' in azure_test_ssh_settings.stdout_lines"
+
   - name: Exercise both ARO identity modes
     agnosticd.cloud_provider_azure.azure_environment:
       action: aro_install
@@ -132,6 +152,7 @@
       project: "{{ project_tag }}"
     loop: [managed_identity, service_principal]
     register: aro_install_results
+
   - name: Verify ready cluster reuse
     ansible.builtin.assert:
       that:
@@ -140,9 +161,11 @@
       - aro_install_results.results[0].cluster.apiserverProfile.url == 'https://api.test-cluster.eastus.aroapp.io:6443/'
       - aro_install_results.results[0].credentials.kubeadminUsername == 'kubeadmin'
       - aro_install_results.results[0].credentials.kubeadminPassword == 'synthetic-aro-128-3-password'
+
   - name: Destroy ARO
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.host_ocp4_aro_destroy
+
   - name: Create service principal ARO
     agnosticd.cloud_provider_azure.azure_environment:
       action: aro_install
@@ -150,15 +173,19 @@
       settings: "{{ azure_settings | combine({'identity_mode': 'service_principal'}) }}"
       config_dir: "{{ azure_cli_config_dir }}"
       project: "{{ project_tag }}"
+
   - name: Destroy ARO again
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.host_ocp4_aro_destroy
+
   - name: Destroy infrastructure
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.template_destroy
+
   - name: Repeat infrastructure destroy
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.template_destroy
+
   - name: Verify repeated destruction
     ansible.builtin.assert:
       that: not azure_result.changed

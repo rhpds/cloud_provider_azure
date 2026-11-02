@@ -1,4 +1,5 @@
 ---
+
 - name: Render Azure installer platform settings
   ansible.builtin.set_fact:
     host_ocp4_installer_platform_fragment: "{{ lookup('ansible.builtin.template', 'platform.yaml.j2') }}"

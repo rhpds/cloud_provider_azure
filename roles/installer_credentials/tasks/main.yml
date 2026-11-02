@@ -1,12 +1,15 @@
 ---
+
 - name: Install Azure CLI
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.install_cli
+
 - name: Create private installer credential directory
   ansible.builtin.file:
     path: "/home/{{ ansible_user }}/.azure"
     state: directory
-    mode: '0700'
+    mode: u=rwx,go=
+
 - name: Write installer service principal credentials
   ansible.builtin.copy:
     content: >-
@@ -15,5 +18,5 @@
            'clientSecret': hostvars.localhost.azure_auth.password,
            'tenantId': hostvars.localhost.azure_auth.tenant} | to_json }}
     dest: "/home/{{ ansible_user }}/.azure/osServicePrincipal.json"
-    mode: '0600'
+    mode: u=rw,go=
   no_log: true

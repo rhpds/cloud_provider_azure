@@ -15,6 +15,7 @@ and ARO-managed group names. The controller needs Azure CLI and permission to
 read/create the group.
 
 ```yaml
+
 - name: Prepare the IPI installer resource group
   when: host_ocp4_deploy_installation_method == 'openshift_install'
   ansible.builtin.include_role:

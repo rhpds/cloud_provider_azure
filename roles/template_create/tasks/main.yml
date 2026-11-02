@@ -1,4 +1,5 @@
 ---
+
 - name: Run Azure provision
   agnosticd.cloud_provider_azure.azure_environment:
     action: provision

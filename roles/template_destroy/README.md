@@ -14,6 +14,7 @@ controller facts and original `project_tag`; it also describes the registered
 record are required. No bastion SSH connection is used by this role.
 
 ```yaml
+
 - name: Remove infrastructure after cluster cleanup
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.template_destroy

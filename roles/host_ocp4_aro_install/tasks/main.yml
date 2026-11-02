@@ -1,16 +1,21 @@
 ---
+
 - name: Install and configure ARO
   block:
+
   - name: Validate ARO input
     ansible.builtin.assert:
       that:
       - hostvars.localhost.azure_settings.version | length > 0
       - hostvars.localhost.azure_settings.worker_count | int >= (2 if hostvars.localhost.azure_settings.hcp | default(false) else 3)
+
   - name: Install Azure CLI on bastion
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.install_cli
+
   - name: Create or reconnect to ARO cluster
     block:
+
     - name: Provision ARO using protected credentials
       agnosticd.cloud_provider_azure.azure_environment:
         template: >-
@@ -26,6 +31,7 @@
       poll: 30
       no_log: true
     rescue:
+
     - name: Report non-secret ARO preflight diagnostics
       vars:
         _diagnostic: "{{ azure_aro_result.diagnostic | default({}) }}"
@@ -49,17 +55,21 @@
           {% else %}
           The protected provisioning operation failed; no credential-bearing output is displayed.
           {% endif %}
+
   - name: Install OpenShift client
     ansible.builtin.include_tasks: install_client.yml
+
   - name: Configure HCP administrative access
     when: hostvars.localhost.azure_settings.hcp | default(false)
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.host_ocp4_aro_hcp_credentials
+
   - name: Configure classic ARO access
     when: not (hostvars.localhost.azure_settings.hcp | default(false))
     ansible.builtin.include_tasks: classic_access.yml
 
   always:
+
   - name: Remove Azure CLI session from bastion
     ansible.builtin.file:
       path: "/home/{{ ansible_user }}/.azure-agnosticd"

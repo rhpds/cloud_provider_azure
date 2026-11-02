@@ -45,6 +45,7 @@ The generated `azure_arm_template` fact is a mapping consumed by `template_creat
 It contains the SSH public key, not private credentials.
 
 ```yaml
+
 - name: Render the bastion template after provider and SSH-key initialization
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.template_generate

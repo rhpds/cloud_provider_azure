@@ -18,6 +18,7 @@ owned group. This role needs neither SSH to the bastion nor a working OpenShift
 API/kubeconfig, allowing cleanup after incomplete installation.
 
 ```yaml
+
 - name: Delete the managed cluster before bastion infrastructure
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.host_ocp4_aro_destroy

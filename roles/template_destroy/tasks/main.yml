@@ -1,4 +1,5 @@
 ---
+
 - name: Run Azure destroy
   agnosticd.cloud_provider_azure.azure_environment:
     action: destroy

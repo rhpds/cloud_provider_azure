@@ -5,7 +5,7 @@
 ansible_user: "{{ undef(hint='Supply the bastion SSH user through inventory') }}"
 # azure_auth (secret mapping): normalized credential fact on hostvars.localhost,
 # produced by initialize. Required keys: subscription_id, app_id, password,
-# tenant. The resulting osServicePrincipal.json has mode 0600.
+# tenant. The resulting osServicePrincipal.json has mode u=rw,go=.
 azure_auth: "{{ undef(hint='Run initialize on localhost before installer_credentials') }}"
 # azure_cli_version (string): passed to the included install_cli role. Keep its
 # value aligned with the controller execution environment; see that role's README.

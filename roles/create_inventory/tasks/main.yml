@@ -1,4 +1,5 @@
 ---
+
 - name: Run Azure inventory
   agnosticd.cloud_provider_azure.azure_environment:
     action: inventory

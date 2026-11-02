@@ -56,6 +56,7 @@ class CliRepositoryTests(unittest.TestCase):
             (role / 'main.yml').write_text(yaml.safe_dump(tasks, sort_keys=False))
             playbook = root / 'facts.yml'
             playbook.write_text('''---
+
 - name: Verify delegated CLI fact gathering without controller facts
   hosts: localhost
   connection: local
@@ -63,21 +64,26 @@ class CliRepositoryTests(unittest.TestCase):
   vars:
     ansible_facts: {}
   tasks:
+
   - name: Add a local stand-in for the bastion
     ansible.builtin.add_host:
       name: bastion-stub
       ansible_connection: local
+
   - name: Run the role fact-gathering and validation tasks
     delegate_to: bastion-stub
     block:
+
     - name: Include read-only tasks from installer
       ansible.builtin.include_role:
         name: install_cli
     rescue:
+
     - name: Accept only the documented unsupported distribution error on non-RHEL test hosts
       ansible.builtin.assert:
         that:
         - ansible_failed_result.msg == 'Azure CLI installation requires a RHEL-compatible 8, 9 or 10 host'
+
   - name: Verify the setup result is available independently of controller facts
     ansible.builtin.assert:
       that:

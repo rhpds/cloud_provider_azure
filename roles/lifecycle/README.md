@@ -3,7 +3,7 @@
 Start, stop or report status for an existing Azure deployment. Run on the
 controller with the original deployment variables and restored output archive.
 The role includes `initialize` itself, then performs the selected lifecycle action
-and writes `<output_dir>/status.txt` with mode `0600`.
+and writes `<output_dir>/status.txt` with mode `u=rw,go=`.
 
 ## Action selection and variables
 
@@ -20,6 +20,7 @@ ACTION: status  # start, stop or status
 explicit override so the bastion starts without changing the global destroy action:
 
 ```yaml
+
 - name: Start machines needed for cleanup
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.lifecycle

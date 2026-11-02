@@ -67,7 +67,7 @@ so a different client in `PATH` cannot take precedence.
 After successful
 `oc login`, the role stores kubeconfig and kubeadmin password under the bastion
 authentication directory, exports them to these controller files and protects
-them with mode `0600`:
+them with mode `u=rw,go=`:
 
 - `<output_dir>/<config>_<guid>_kubeconfig`
 - `<output_dir>/<config>_<guid>_kubeadmin-password`
@@ -96,6 +96,7 @@ without printing the raw command output or credentials. TLS verification stays
 enabled.
 
 ```yaml
+
 - name: Install through the normal v2 dispatcher
   ansible.builtin.include_role:
     name: host_ocp4_deploy

@@ -20,7 +20,7 @@ config: "{{ undef(hint='Supply the v2 config name') }}"
 # guid (string): unique deployment ID in the controller access filenames.
 guid: "{{ undef(hint='Supply the deployment guid') }}"
 # output_dir (absolute controller path): existing archive directory receiving
-# <config>_<guid>_kubeconfig and <config>_<guid>_kubeadmin-password, mode 0600.
+# <config>_<guid>_kubeconfig and <config>_<guid>_kubeadmin-password, mode u=rw,go=.
 # HCP exports kubeconfig and <config>_<guid>_hcp_credentials.json expiry instead;
 # it has no kubeadmin password. Its access role refreshes every kubeconfig copy.
 output_dir: "{{ undef(hint='Supply the controller output_dir') }}"

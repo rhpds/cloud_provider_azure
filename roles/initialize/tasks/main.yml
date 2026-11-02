@@ -1,4 +1,5 @@
 ---
+
 - name: Validate deployment inputs
   ansible.builtin.assert:
     that:
@@ -208,4 +209,4 @@
           'dns_record': {'zone': azure_settings.dns_zone, 'group': azure_settings.sandbox_group, 'name': 'bastion', 'type': 'A'}
          } | to_nice_json }}
     dest: "{{ output_dir }}/{{ config }}_{{ guid }}_azure_ownership.json"
-    mode: '0600'
+    mode: u=rw,go=

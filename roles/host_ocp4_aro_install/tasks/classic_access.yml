@@ -1,11 +1,14 @@
 ---
+
 - name: Create cluster authentication directory
   ansible.builtin.file:
     path: "/home/{{ ansible_user }}/{{ cluster_name }}/auth"
     state: directory
-    mode: '0700'
+    mode: u=rwx,go=
+
 - name: Log into ARO
   block:
+
   - name: Authenticate using protected ARO credentials
     ansible.builtin.command:
       argv:
@@ -23,6 +26,7 @@
     changed_when: false
     no_log: true
   rescue:
+
   - name: Report non-secret ARO login diagnostics
     vars:
       _login_error: "{{ azure_aro_login.stderr | default('') | lower }}"
@@ -44,22 +48,26 @@
         The protected login command returned a non-zero exit code; check API and authentication endpoint access.
         {% endif %}
         Credentials and raw command output remain hidden.
+
 - name: Store kubeadmin password
   ansible.builtin.copy:
     content: "{{ azure_aro_result.credentials.kubeadminPassword }}"
     dest: "/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeadmin-password"
-    mode: '0600'
+    mode: u=rw,go=
   no_log: true
+
 - name: Save ARO kubeadmin password in user data
   delegate_to: localhost
   agnosticd.core.agnosticd_user_info:
     data:
       openshift_kubeadmin_password: "{{ azure_aro_result.credentials.kubeadminPassword }}"
   no_log: true
+
 - name: Protect kubeconfig
   ansible.builtin.file:
     path: "/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeconfig"
-    mode: '0600'
+    mode: u=rw,go=
+
 - name: Export cluster access to controller
   ansible.builtin.fetch:
     src: "/home/{{ ansible_user }}/{{ cluster_name }}/auth/{{ item }}"
@@ -67,40 +75,47 @@
     flat: true
   loop: [kubeconfig, kubeadmin-password]
   no_log: true
+
 - name: Create bastion kubeconfig directory
   ansible.builtin.file:
     path: "/home/{{ ansible_user }}/.kube"
     state: directory
-    mode: '0700'
+    mode: u=rwx,go=
+
 - name: Protect controller credentials
   delegate_to: localhost
   ansible.builtin.file:
     path: "{{ output_dir }}/{{ config }}_{{ guid }}_{{ item }}"
-    mode: '0600'
+    mode: u=rw,go=
   loop: [kubeconfig, kubeadmin-password]
+
 - name: Configure bastion user access
   ansible.builtin.copy:
     src: "/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeconfig"
     dest: "/home/{{ ansible_user }}/.kube/config"
     remote_src: true
-    mode: '0600'
+    mode: u=rw,go=
+
 - name: Publish standard OpenShift access information
   ansible.builtin.include_role:
     name: host_ocp4_installer_info
+
 - name: Configure student cluster access
   when: bastion_setup_student_user | default(false) | bool
   become: true
   block:
+
   - name: Create student kubeconfig directory
     ansible.builtin.file:
       path: "/home/{{ bastion_student_user_name }}/.kube"
       state: directory
       owner: "{{ bastion_student_user_name }}"
-      mode: '0700'
+      mode: u=rwx,go=
+
   - name: Copy student kubeconfig
     ansible.builtin.copy:
       src: "/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeconfig"
       dest: "/home/{{ bastion_student_user_name }}/.kube/config"
       remote_src: true
       owner: "{{ bastion_student_user_name }}"
-      mode: '0600'
+      mode: u=rw,go=

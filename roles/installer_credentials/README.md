@@ -14,6 +14,7 @@ package/repository privileges. [defaults/main.yml](defaults/main.yml) documents
 `ansible_user` comes from inventory and must have a home under `/home/<user>`.
 
 ```yaml
+
 - name: Prepare Azure IPI installer credentials on the bastion
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.installer_credentials
@@ -21,8 +22,8 @@ package/repository privileges. [defaults/main.yml](defaults/main.yml) documents
 
 ## Credential file and lifecycle
 
-The role creates `/home/<ansible_user>/.azure` with mode `0700`, then writes
-`osServicePrincipal.json` with mode `0600` and these exact installer keys:
+The role creates `/home/<ansible_user>/.azure` with mode `u=rwx,go=`, then writes
+`osServicePrincipal.json` with mode `u=rw,go=` and these exact installer keys:
 
 | File key | Source in `hostvars.localhost.azure_auth` |
 | --- | --- |

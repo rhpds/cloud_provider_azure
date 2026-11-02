@@ -14,6 +14,7 @@ by `initialize` on localhost. `azure_bastion_user` defaults to `azure` and must
 match the user chosen when the VM was created.
 
 ```yaml
+
 - name: Discover the Azure bastion
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.create_inventory

@@ -30,6 +30,7 @@ cannot be overridden through that mapping.
 ## Outputs and use
 
 ```yaml
+
 - name: Render provider-specific IPI platform fragments
   ansible.builtin.include_role:
     name: agnosticd.cloud_provider_azure.installer_platform
