@@ -95,6 +95,29 @@ options:
       service_cidr:
         description: Service network IPv4 CIDR.
         type: str
+      hcp:
+        description: Select hosted control planes instead of classic ARO.
+        type: bool
+        default: false
+      hcp_recover_vault:
+        description: Internal permission derived from a validated existing ownership archive.
+        type: bool
+        default: false
+      hcp_csr:
+        description: PEM certificate request used for HCP temporary admin access.
+        type: str
+      hcp_nodepool:
+        description: Single HCP worker node pool name.
+        type: str
+      hcp_vault_name:
+        description: Deterministic owned Key Vault name archived for HCP recovery.
+        type: str
+      hcp_zone:
+        description: Logical Azure availability zone for the HCP worker pool.
+        type: str
+      hcp_integration_cidr:
+        description: Dedicated delegated integration subnet IPv4 CIDR.
+        type: str
       pull_secret:
         description: Optional Red Hat pull secret as JSON text or a mapping, protected with no_log.
         type: raw
@@ -110,7 +133,7 @@ options:
     description: Provider operation.
     type: str
     required: true
-    choices: [validate, installer_prepare, provision, inventory, destroy, check_region_change, aro_check_sizes, aro_install, aro_destroy, start, stop, status]
+    choices: [validate, installer_prepare, provision, inventory, destroy, check_region_change, aro_check_sizes, aro_install, aro_destroy, hcp_credentials, start, stop, status]
   template:
     description: Rendered ARM deployment template.
     type: dict
@@ -134,14 +157,25 @@ vms:
 credentials:
   description: Secret ARO kubeadmin credentials. Call aro_install with task-level no_log enabled.
   type: dict
-  returned: when aro_install is requested
+  returned: when classic aro_install is requested
+kubeconfig:
+  description: Secret HCP certificate kubeconfig, without the locally held private key. Use task-level no_log.
+  type: str
+  returned: when hcp_credentials is requested
+expirationTimestamp:
+  description: Expiry of the temporary HCP administrative certificate.
+  type: str
+  returned: when hcp_credentials is requested
 '''
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.provider import Azure, AzureError, validate_names
+from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.hcp import HCP
 
 
 def execute(az, action, s, template):
     if action == 'validate':
+        if s.get('hcp'):
+            HCP(az, s).validate()
         group = az.call('group', 'show', '-n', s['sandbox_group'])
         if group['location'].lower() != s['region'].lower():
             raise AzureError('Sandbox resource group location does not match azure_region')
@@ -167,7 +201,11 @@ def execute(az, action, s, template):
     if action == 'inventory':
         return dict(vms=az.inventory(s))
     if action == 'aro_install':
+        if s.get('hcp'):
+            return HCP(az, s).install(template)
         return az.aro_install(s)
+    if action == 'hcp_credentials':
+        return HCP(az, s).credentials(s['hcp_csr'])
     if action == 'aro_check_sizes':
         az.check_aro_size_change(s)
         return {}
@@ -175,6 +213,9 @@ def execute(az, action, s, template):
         az.check_region_change(s)
         return {}
     if action == 'aro_destroy':
+        if s.get('hcp'):
+            HCP(az, s).destroy()
+            return {}
         az.aro_destroy(s)
         return {}
     if action == 'destroy':
@@ -201,7 +242,9 @@ def argument_spec():
     settings_options = {key: dict(type='str') for key in (
         'sandbox_group', 'region', 'infra_group', 'cluster_group', 'cluster_name', 'dns_zone', 'method',
         'identity_mode', 'version', 'master_size', 'worker_size', 'vnet_cidr', 'master_cidr',
-        'worker_cidr', 'pod_cidr', 'service_cidr')}
+        'worker_cidr', 'pod_cidr', 'service_cidr', 'hcp_nodepool', 'hcp_zone', 'hcp_integration_cidr', 'hcp_vault_name')}
+    settings_options.update(hcp=dict(type='bool', default=False), hcp_recover_vault=dict(type='bool', default=False),
+                            hcp_csr=dict(type='str', no_log=True))
     settings_options.update(worker_count=dict(type='int'), worker_disk=dict(type='int'),
                             pull_secret=dict(type='raw', no_log=True))
     return dict(
@@ -212,7 +255,7 @@ def argument_spec():
         settings=dict(type='dict', required=True, options=settings_options),
         config_dir=dict(type='path', required=True), project=dict(type='str', required=True),
         action=dict(type='str', required=True, choices=['validate', 'installer_prepare', 'provision', 'inventory', 'destroy',
-                    'check_region_change', 'aro_check_sizes', 'aro_install', 'aro_destroy', 'start', 'stop', 'status']),
+                    'check_region_change', 'aro_check_sizes', 'aro_install', 'aro_destroy', 'hcp_credentials', 'start', 'stop', 'status']),
         template=dict(type='dict', default={}))
 
 

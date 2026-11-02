@@ -1,0 +1,167 @@
+---
+- name: Refresh HCP administrative access on bastion
+  block:
+  - name: Validate HCP credential context
+    ansible.builtin.assert:
+      that: hostvars.localhost.azure_settings.hcp | default(false) | bool
+  - name: Install certificate generation dependency
+    become: true
+    ansible.builtin.dnf:
+      name: python3-cryptography
+      state: present
+  - name: Create temporary credential workspace
+    ansible.builtin.tempfile:
+      state: directory
+      prefix: aro-hcp-credentials-
+    register: hcp_credentials_tmp
+  - name: Generate private certificate key
+    community.crypto.openssl_privatekey:
+      path: "{{ hcp_credentials_tmp.path }}/key.pem"
+      type: RSA
+      size: 2048
+      mode: '0600'
+  - name: Generate administrative certificate request
+    community.crypto.openssl_csr:
+      path: "{{ hcp_credentials_tmp.path }}/request.pem"
+      privatekey_path: "{{ hcp_credentials_tmp.path }}/key.pem"
+      common_name: agnosticd-hcp-admin
+  - name: Read certificate request
+    ansible.builtin.slurp:
+      src: "{{ hcp_credentials_tmp.path }}/request.pem"
+    register: hcp_csr
+  - name: Request temporary administrative credential
+    agnosticd.cloud_provider_azure.azure_environment:
+      action: hcp_credentials
+      auth: "{{ hostvars.localhost.azure_auth }}"
+      settings: "{{ hostvars.localhost.azure_settings | combine({'hcp_csr': hcp_csr.content | b64decode}) }}"
+      config_dir: "/home/{{ ansible_user }}/.azure-agnosticd"
+      project: "{{ project_tag }}"
+    register: hcp_credential
+    no_log: true
+  - name: Read private key
+    ansible.builtin.slurp:
+      src: "{{ hcp_credentials_tmp.path }}/key.pem"
+    register: hcp_private_key
+    no_log: true
+  - name: Create administrative kubeconfig directory
+    ansible.builtin.file:
+      path: "/home/{{ ansible_user }}/{{ cluster_name }}/auth"
+      state: directory
+      mode: '0700'
+  - name: Assemble kubeconfig with locally held private key
+    vars:
+      hcp_config: "{{ hcp_credential.kubeconfig | from_yaml }}"
+    ansible.builtin.copy:
+      content: >-
+        {{ hcp_config | combine({'users': [hcp_config.users[0] | combine({'user': hcp_config.users[0].user
+           | combine({'client-key-data': hcp_private_key.content})})]}) | to_nice_yaml }}
+      dest: "/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeconfig"
+      mode: '0600'
+    no_log: true
+  - name: Create login user kubeconfig directory
+    ansible.builtin.file:
+      path: "/home/{{ ansible_user }}/.kube"
+      state: directory
+      mode: '0700'
+  - name: Configure login user access
+    ansible.builtin.copy:
+      src: "/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeconfig"
+      dest: "/home/{{ ansible_user }}/.kube/config"
+      remote_src: true
+      mode: '0600'
+    no_log: true
+  - name: Check administrative API access
+    ansible.builtin.command:
+      argv:
+      - "{{ aro_client_install_dir }}/oc"
+      - "--kubeconfig=/home/{{ ansible_user }}/.kube/config"
+      - --request-timeout=30s
+      - get
+      - --raw=/readyz
+    changed_when: false
+    register: hcp_api_ready
+    until: hcp_api_ready is succeeded
+    retries: 20
+    delay: 15
+  - name: Export HCP access to controller
+    ansible.builtin.fetch:
+      src: "/home/{{ ansible_user }}/{{ cluster_name }}/auth/kubeconfig"
+      dest: "{{ hostvars.localhost.output_dir }}/{{ config }}_{{ guid }}_kubeconfig"
+      flat: true
+    no_log: true
+  - name: Record credential expiry on controller
+    delegate_to: localhost
+    ansible.builtin.copy:
+      content: "{{ {'expirationTimestamp': hcp_credential.expirationTimestamp} | to_nice_json }}"
+      dest: "{{ output_dir }}/{{ config }}_{{ guid }}_hcp_credentials.json"
+      mode: '0600'
+  - name: Protect exported kubeconfig
+    delegate_to: localhost
+    ansible.builtin.file:
+      path: "{{ output_dir }}/{{ config }}_{{ guid }}_kubeconfig"
+      mode: '0600'
+  - name: Configure HCP student access
+    when: bastion_setup_student_user | bool
+    become: true
+    block:
+    - name: Create student kubeconfig directory
+      ansible.builtin.file:
+        path: "/home/{{ bastion_student_user_name }}/.kube"
+        state: directory
+        owner: "{{ bastion_student_user_name }}"
+        mode: '0700'
+    - name: Copy temporary administrative kubeconfig for student
+      ansible.builtin.copy:
+        src: "/home/{{ ansible_user }}/.kube/config"
+        dest: "/home/{{ bastion_student_user_name }}/.kube/config"
+        remote_src: true
+        owner: "{{ bastion_student_user_name }}"
+        mode: '0600'
+      no_log: true
+  - name: Read HCP console metadata
+    delegate_to: localhost
+    kubernetes.core.k8s_info:
+      api_version: config.openshift.io/v1
+      kind: Console
+      name: cluster
+      kubeconfig: "{{ output_dir }}/{{ config }}_{{ guid }}_kubeconfig"
+    register: hcp_console
+  - name: Read HCP ingress metadata
+    delegate_to: localhost
+    kubernetes.core.k8s_info:
+      api_version: config.openshift.io/v1
+      kind: Ingress
+      name: cluster
+      kubeconfig: "{{ output_dir }}/{{ config }}_{{ guid }}_kubeconfig"
+    register: hcp_ingress
+    retries: 30
+    delay: 10
+    until:
+    - hcp_ingress.resources | length > 0
+    - hcp_ingress.resources[0].spec.domain is defined
+    - hcp_ingress.resources[0].spec.domain | length > 0
+  - name: Set shared OpenShift access facts on controller
+    delegate_to: localhost
+    delegate_facts: true
+    ansible.builtin.set_fact:
+      openshift_api_url: "{{ (hcp_credential.kubeconfig | from_yaml).clusters[0].cluster.server }}"
+      openshift_console_url: "{{ hcp_console.resources[0].status.consoleURL | default('') }}"
+      openshift_cluster_ingress_domain: "{{ hcp_ingress.resources[0].spec.domain }}"
+  - name: Publish HCP access information
+    agnosticd.core.agnosticd_user_info:
+      data:
+        openshift_console_url: "{{ hcp_console.resources[0].status.consoleURL | default('') }}"
+        openshift_api_url: "{{ (hcp_credential.kubeconfig | from_yaml).clusters[0].cluster.server }}"
+        openshift_hcp_credentials_expire_at: "{{ hcp_credential.expirationTimestamp }}"
+      msg: HCP administrative kubeconfig expires after 24 hours; refresh it with host_ocp4_aro_hcp_credentials. User console login requires external OIDC.
+  always:
+  - name: Remove temporary private key and certificate request
+    when: hcp_credentials_tmp.path is defined
+    ansible.builtin.file:
+      path: "{{ hcp_credentials_tmp.path }}"
+      state: absent
+    no_log: true
+  - name: Remove temporary HCP Azure CLI session
+    ansible.builtin.file:
+      path: "/home/{{ ansible_user }}/.azure-agnosticd"
+      state: absent

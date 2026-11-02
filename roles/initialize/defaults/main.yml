@@ -86,20 +86,25 @@ aro_cluster_name: "aro-{{ guid }}"
 aro_identity_mode: managed_identity
 # aro_version (string): REQUIRED for ARO; exact value from the read-only command
 # az aro get-versions --location <azure_region>. Empty is allowed for IPI.
+# For HCP use the hcpOpenShiftVersions REST endpoint in the collection guide;
+# its exact release also selects the worker pool and downloaded client version.
 aro_version: ""
 # aro_master_vm_size (string): Azure SKU for each of three control-plane nodes.
-# Quota preflight reserves a fourth node of this size for bootstrap.
+# Classic quota preflight reserves a fourth node of this size for bootstrap.
+# Unused by HCP, which has no customer control-plane VMs.
 aro_master_vm_size: Standard_D8s_v5
 # aro_worker_vm_size (string): Azure SKU for every ARO worker.
 aro_worker_vm_size: Standard_D4s_v5
-# aro_worker_count (integer): standard ARO needs at least three workers.
-aro_worker_count: 3
+# aro_worker_count (integer): classic ARO defaults/requires at least three;
+# HCP defaults/requires at least two workers in the single node pool.
+aro_worker_count: "{{ 2 if aro_deploy_hcp | bool else 3 }}"
 # aro_worker_disk_size (integer): OS disk capacity per worker in GiB.
 aro_worker_disk_size: 128
 # aro_vnet_cidr (IPv4 CIDR string): ARO machine VNet, separate from the bastion
 # VNet (10.240.0.0/24). It must contain both ARO machine subnets.
 aro_vnet_cidr: 10.0.0.0/22
-# aro_master_subnet_cidr (IPv4 CIDR string): control-plane subnet in that VNet.
+# aro_master_subnet_cidr (IPv4 CIDR string): classic control-plane subnet in
+# that VNet. Unused by HCP; use aro_hcp_vnet_integration_subnet_cidr instead.
 aro_master_subnet_cidr: 10.0.0.0/23
 # aro_worker_subnet_cidr (IPv4 CIDR string): worker subnet, disjoint from master.
 aro_worker_subnet_cidr: 10.0.2.0/23
@@ -132,3 +137,17 @@ azure_ownership_stat: "{{ undef(hint='Internal ownership archive stat result') }
 azure_ownership_slurp: "{{ undef(hint='Internal ownership archive slurp result') }}"
 # saved (mapping): task-local decoded ownership archive; never an input override.
 saved: "{{ undef(hint='Internal task-local decoded ownership record') }}"
+
+# aro_deploy_hcp (boolean): opt in to hosted control planes. Valid only for aro
+# with managed_identity. Existing archives without this key mean classic ARO;
+# an archived deployment cannot change architectures. Use a new GUID instead.
+aro_deploy_hcp: false
+# aro_hcp_nodepool_name (string): single HCP worker pool name.
+aro_hcp_nodepool_name: workers
+# aro_hcp_availability_zone (string): zone for this pool. Multiple pools/zones
+# are outside the initial implementation. Must be available for the worker SKU.
+aro_hcp_availability_zone: '1'
+# aro_hcp_vnet_integration_subnet_cidr (IPv4 CIDR): dedicated delegated subnet,
+# at least /28, disjoint from aro_worker_subnet_cidr and inside aro_vnet_cidr.
+# No master subnet or control-plane VMs are created in HCP mode.
+aro_hcp_vnet_integration_subnet_cidr: 10.0.0.0/28

@@ -2,7 +2,7 @@
 
 Collection namespace: `agnosticd.cloud_provider_azure`. This collection supports
 new v2 deployments: a Linux bastion, self-managed Azure OpenShift IPI and standard
-architecture ARO.
+architecture ARO, with opt-in ARO Hosted Control Planes (HCP) preview support.
 
 ## Roles
 
@@ -28,6 +28,7 @@ by those roles; the collection READMEs identify those dependencies.
 | [installer_credentials](roles/installer_credentials/README.md) | Bastion: write the secret IPI service-principal file |
 | [installer_platform](roles/installer_platform/README.md) | Render Azure YAML fragments for the shared IPI installer |
 | [host_ocp4_aro_install](roles/host_ocp4_aro_install/README.md) | Delegated bastion: provision/reconnect ARO and export access files |
+| [host_ocp4_aro_hcp_credentials](roles/host_ocp4_aro_hcp_credentials/README.md) | Bastion: issue/refresh temporary HCP administrative kubeconfig |
 | [host_ocp4_aro_destroy](roles/host_ocp4_aro_destroy/README.md) | Controller: delete ARO before its owned network/identity group |
 | [lifecycle](roles/lifecycle/README.md) | Controller: start, stop or report status using a separate lifecycle action |
 | [template_destroy](roles/template_destroy/README.md) | Controller: remove owned bastion/DNS after cluster cleanup |
@@ -230,3 +231,58 @@ Azure policy, ARM API or runtime-image compatibility.
 References: [Microsoft ARO creation](https://learn.microsoft.com/en-us/azure/openshift/howto-create-openshift-cluster),
 [ARO CLI](https://learn.microsoft.com/en-us/cli/azure/aro),
 [Red Hat Azure installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html-single/installing_on_azure/installing_on_azure).
+
+## Hosted control planes (preview)
+
+Set `host_ocp4_deploy_installation_method: aro` and `aro_deploy_hcp: true` for a
+NEW deployment. Default false preserves standard ARO. Missing flags in existing
+archives mean standard ARO; switching architectures for an archived GUID is
+refused. Keep using the existing ARO install/destroy roles.
+
+HCP defaults to two Standard_D4s_v5 workers in one node pool/zone, public API and
+ingress, managed identities, OVN-Kubernetes, and a public owned encryption vault.
+`aro_version` must be an exact advertised HCP release: its minor selects the
+control plane, and its full version selects the node pool and client. Standard
+master size/subnet inputs are unused. See initialize/defaults for the pool,
+logical zone and integration CIDR options. Supported preview regions include
+`eastus2` and `westeurope`; `eastus` is not in the published preview list. The
+existing sandbox-group region check still applies. HCP quota preflight requires
+at least 20 available regional/worker-family cores, or workers plus surge when
+larger. No control-plane/bootstrap cores are allocated in this subscription.
+
+Discover regional HCP releases with this read-only command, replacing both
+placeholders (classic `az aro get-versions` queries a different resource type):
+
+```sh
+az rest --method get --url \
+  'https://management.azure.com/subscriptions/<subscription-id>/providers/Microsoft.RedHatOpenShift/locations/<region>/hcpOpenShiftVersions?api-version=2026-09-01-preview'
+```
+
+Select an exact advertised release for `aro_version`. See Microsoft's
+[HCP configuration guide](https://learn.microsoft.com/azure/openshift/howto-choose-cluster-configuration)
+for current preview regions and permanent cluster settings, and the
+[cluster creation guide](https://learn.microsoft.com/azure/openshift/howto-create-custom-hosted-cluster)
+for subscription permissions and resource prerequisites.
+
+HCP uses pinned ARM REST API 2026-09-01-preview and the checked-in ARM template;
+there is no runtime Bicep compiler or preview CLI extension dependency. The
+provider creates operator identities, scoped role assignments, dedicated VNet
+integration, and an encryption key/vault before the cluster and worker pool.
+Failed resource states require explicit destruction; ready resources are reused.
+Destroy deletes pools/cluster and waits for managed-group removal before deleting
+prerequisites. On failure prerequisites remain. The vault's seven-day soft-delete
+recovery window is retained; it is never purged automatically. A matching trusted
+archive permits recovery of that exact deterministic vault on a later retry.
+
+HCP has no built-in kubeadmin login/password. The
+[host_ocp4_aro_hcp_credentials role](roles/host_ocp4_aro_hcp_credentials/README.md)
+issues temporary admin access, exports the standard kubeconfig and records its
+expiry. Credentials expire after 24 hours; rerun that role on the bastion after
+initializing the original controller context to refresh all copies. Regular
+OIDC users, console authentication, private endpoints, multiple node pools and
+automated upgrades are outside this initial implementation. Never use the
+standard password-based info role for HCP.
+
+The v2 sample `openshift-cluster-aro-hcp-azure.yml` documents required sandbox
+inputs and the preview defaults. Live HCP provisioning is not covered by the
+offline test suite.

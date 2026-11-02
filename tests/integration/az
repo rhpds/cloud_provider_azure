@@ -30,7 +30,7 @@ if args[0] == 'rest':
 if args[:2] == ['provider', 'show']: answer({'registrationState': 'Registered'})
 if args[:2] == ['group', 'show']:
     name = value('--name', value('-n'))
-    if name == 'sandbox': answer({'location': 'eastus'})
+    if name == 'sandbox': answer({'location': os.environ.get('AZURE_TEST_REGION', 'eastus')})
     if name not in s['groups']: missing()
     answer(s['groups'][name])
 if args[:2] == ['group', 'create']:

@@ -38,3 +38,9 @@ the group before cluster creation. An already absent cluster group is a no-op.
 The supplied sandbox group, zone and service principal are preserved. Bastion
 infrastructure is intentionally left for `template_destroy` after cluster cleanup.
 There are no public access facts or kubeconfig outputs from this role.
+
+For HCP archives the same role dispatches to the HCP API: delete node pools,
+then the cluster, wait for the service-managed group to disappear, and only then
+remove the owned prerequisite group. Its encryption vault remains soft-deleted
+for Azure's seven-day recovery window; no purge is performed. Failed deletion
+preserves the identities, network and encryption prerequisites for retry.

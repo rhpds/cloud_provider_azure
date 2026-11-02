@@ -1,0 +1,40 @@
+---
+# Controller credential/settings facts: initialize must run on localhost first.
+# azure_auth contains the principal secret; do not print it or override it here.
+azure_auth: "{{ undef(hint='Run initialize on localhost') }}"
+# azure_settings includes hcp=true and the archived cluster identity.
+azure_settings: "{{ undef(hint='Run initialize with the original HCP deployment variables') }}"
+# project_tag (string): original ownership tag required by credential issuance.
+project_tag: "{{ undef(hint='Supply the original project_tag') }}"
+# ansible_user (string): bastion login user, with a home beneath /home.
+ansible_user: "{{ undef(hint='Run on or delegate to the deployed bastion') }}"
+# config/guid (strings): original v2 config and deployment ID for access filenames.
+config: "{{ undef(hint='Supply config') }}"
+guid: "{{ undef(hint='Supply guid') }}"
+# cluster_name (string): original bastion cluster directory used by v2 workloads.
+# Independent of the Azure aro_cluster_name resource name.
+cluster_name: "{{ undef(hint='Supply the original cluster_name') }}"
+# output_dir (absolute controller path): original writable output archive directory.
+output_dir: "{{ undef(hint='Restore the original output directory') }}"
+# aro_client_install_dir (path): directory containing the previously installed oc.
+aro_client_install_dir: /usr/local/bin
+# bastion_setup_student_user (bool): copy credentials to an existing student user.
+bastion_setup_student_user: false
+# bastion_student_user_name (string): required existing user when copying access.
+bastion_student_user_name: "{{ undef(hint='Supply the existing student user when enabled') }}"
+# Internal workspace and CSR slurp result, created by this role.
+hcp_credentials_tmp: {}
+hcp_csr: "{{ undef(hint='Internal certificate request slurp') }}"
+# Internal SECRET response, private-key slurp and assembled kubeconfig mapping.
+hcp_credential: "{{ undef(hint='Internal protected Azure admin credential') }}"
+hcp_private_key: "{{ undef(hint='Internal protected private key') }}"
+hcp_config: "{{ undef(hint='Internal task-local kubeconfig mapping') }}"
+# Internal registered API readiness and Console metadata results.
+hcp_api_ready: "{{ undef(hint='Internal API readiness result') }}"
+hcp_console: "{{ undef(hint='Internal Console metadata') }}"
+
+# Internal registered Ingress query and standard non-secret controller outputs.
+hcp_ingress: "{{ undef(hint='Internal Ingress metadata') }}"
+openshift_api_url: "{{ undef(hint='Generated cluster API URL') }}"
+openshift_console_url: "{{ undef(hint='Generated console URL, empty until available') }}"
+openshift_cluster_ingress_domain: "{{ undef(hint='Generated cluster ingress domain') }}"

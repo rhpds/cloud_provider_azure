@@ -38,6 +38,8 @@ For ARO, only deployment-owned bastion VMs are started/deallocated. The ARO API
 is queried for cluster status; Azure-managed cluster VMs are never powered by
 this collection. For self-managed IPI, start/stop also operates on the VMs in
 the owned cluster resource group. Keep those owned groups deployment-specific.
+HCP uses the same bastion-only power behavior and queries the HCP ARM resource
+for status. Neither ARO architecture is stopped by deallocating the bastion.
 
 `status` performs no power operation. An absent owned group yields no VMs, and
 an absent ARO resource yields a null cluster. Ownership/authentication failures

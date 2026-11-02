@@ -115,3 +115,9 @@ Supply the deployment context and credentials through the play's existing v2
 variables. Continue with `template_generate` / `template_create` for provision,
 or the appropriate lifecycle/destruction role. See the
 [collection guide](../../README.md) for the complete flow.
+
+HCP is selected by `aro_deploy_hcp`, default false. Older ownership records
+without it are normalized to false for comparison. HCP-specific pool, zone,
+integration subnet and deterministic vault name become immutable archived
+settings. The transient recovery permission is derived only from a validated
+existing archive and is never persisted as a configurable override.

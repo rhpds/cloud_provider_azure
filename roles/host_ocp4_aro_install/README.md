@@ -3,8 +3,7 @@
 Create or reconnect to a standard Azure Red Hat OpenShift cluster, configure
 bastion access, and export the cluster credentials to the controller. The v2
 `host_ocp4_deploy` dispatcher selects this role when
-`host_ocp4_deploy_installation_method: aro`. Hosted control planes are not
-implemented by this deployment path.
+`host_ocp4_deploy_installation_method: aro`. Set `aro_deploy_hcp: true` to select the HCP preview branch; see the collection guide.
 
 ## Prerequisites and execution
 
@@ -101,3 +100,13 @@ enabled.
 
 The dispatcher supplies bastion delegation; do not put `delegate_to` directly on
 an `include_role` task. See the v2 Azure sample for credential and version inputs.
+
+## HCP branch
+
+With `aro_deploy_hcp: true`, the provider uses the HCP resource type and owned
+ARM prerequisites instead of the classic API. It waits for cluster and node pool,
+installs the exact selected client, then invokes `host_ocp4_aro_hcp_credentials`.
+The classic password login/access task file is skipped. HCP uses two workers by
+default and requires managed identity. No openshift-install program is used in
+either ARO architecture. See the collection's HCP section and initialize/defaults
+for region, quota, version, subnet and recovery requirements.

@@ -63,8 +63,8 @@ raise SystemExit(1)
                     member = zipfile.ZipInfo(name)
                     member.external_attr = 0o100755 << 16
                     client_zip.writestr(member, binary)
-            tasks = yaml.safe_load((ROOT / 'roles/host_ocp4_aro_install/tasks/main.yml').read_text())
-            login = next(task for task in tasks[0]['block'] if task['name'] == 'Log into ARO')
+            tasks = yaml.safe_load((ROOT / 'roles/host_ocp4_aro_install/tasks/classic_access.yml').read_text())
+            login = next(task for task in tasks if task['name'] == 'Log into ARO')
             login['block'][0].update(retries=1, delay=0)
             fragment = root / 'login.yml'
             fragment.write_text(yaml.safe_dump([login], sort_keys=False))

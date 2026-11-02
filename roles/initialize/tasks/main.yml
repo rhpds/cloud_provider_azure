@@ -66,6 +66,7 @@
       cluster_name: "{{ aro_cluster_name }}"
       dns_zone: "{{ azure_dns_zone }}"
       method: "{{ host_ocp4_deploy_installation_method | default('openshift_install') }}"
+      hcp: "{{ aro_deploy_hcp | bool }}"
       identity_mode: "{{ aro_identity_mode }}"
       version: "{{ aro_version }}"
       master_size: "{{ aro_master_vm_size }}"
@@ -78,6 +79,14 @@
       pod_cidr: "{{ aro_pod_cidr }}"
       service_cidr: "{{ aro_service_cidr }}"
   no_log: true
+
+- name: Add HCP settings to the ownership contract
+  when: aro_deploy_hcp | bool
+  ansible.builtin.set_fact:
+    azure_settings: >-
+      {{ azure_settings | combine({'hcp_nodepool': aro_hcp_nodepool_name, 'hcp_zone': aro_hcp_availability_zone,
+         'hcp_integration_cidr': aro_hcp_vnet_integration_subnet_cidr,
+         'hcp_vault_name': 'hcp-' ~ ((azure_auth.subscription_id ~ '/' ~ project_tag) | hash('sha256'))[:20]}) }}
 
 - name: Locate archived ownership record
   ansible.builtin.stat:
@@ -99,7 +108,8 @@
     - saved.subscription_id == azure_auth.subscription_id
     - saved.project == project_tag
     - >-
-      (saved.settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size', 'region']) | items2dict) ==
+      (saved.settings | combine({'hcp': saved.settings.hcp | default(false)})
+       | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size', 'region']) | items2dict) ==
       (azure_settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size', 'region']) | items2dict)
     - saved.settings.region == azure_settings.region or ACTION | default('provision') == 'provision'
     fail_msg: |-
@@ -111,7 +121,9 @@
       project_tag: archived={{ saved.project | to_json }}, requested={{ project_tag | to_json }}
       {% endif %}
       {% for field, variable in {
-        'sandbox_group': 'azure_resource_group', 'region': 'azure_region',
+        'hcp': 'aro_deploy_hcp', 'sandbox_group': 'azure_resource_group', 'region': 'azure_region',
+        'hcp_nodepool': 'aro_hcp_nodepool_name', 'hcp_zone': 'aro_hcp_availability_zone',
+        'hcp_integration_cidr': 'aro_hcp_vnet_integration_subnet_cidr',
         'infra_group': 'azure_infra_resource_group', 'cluster_group': 'azure_cluster_resource_group',
         'cluster_name': 'aro_cluster_name', 'dns_zone': 'azure_dns_zone',
         'method': 'host_ocp4_deploy_installation_method', 'identity_mode': 'aro_identity_mode',
@@ -162,6 +174,11 @@
     config_dir: "{{ azure_cli_config_dir }}"
     project: "{{ project_tag }}"
 
+- name: Permit HCP vault recovery only with matching archived ownership
+  when: aro_deploy_hcp | bool
+  ansible.builtin.set_fact:
+    azure_settings: "{{ azure_settings | combine({'hcp_recover_vault': azure_ownership_stat.stat.exists}) }}"
+
 - name: Verify sandbox resource group and delegated zone
   agnosticd.cloud_provider_azure.azure_environment:
     action: validate
@@ -174,7 +191,7 @@
   ansible.builtin.copy:
     content: >-
       {{ {'subscription_id': azure_auth.subscription_id, 'project': project_tag,
-          'settings': azure_settings,
+          'settings': azure_settings | dict2items | rejectattr('key', 'equalto', 'hcp_recover_vault') | items2dict,
           'resource_group_ids': [
             '/subscriptions/' ~ azure_auth.subscription_id ~ '/resourceGroups/' ~ azure_settings.infra_group,
             '/subscriptions/' ~ azure_auth.subscription_id ~ '/resourceGroups/' ~ azure_settings.cluster_group,

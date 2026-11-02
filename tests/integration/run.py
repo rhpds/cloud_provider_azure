@@ -232,6 +232,42 @@ def main():
                 print(case_result.stdout)
                 return 1
             print('PASS: credential normalization case ' + name)
+        # Exercise real HCP normalization/archives through the module without any ARM HTTP calls.
+        hcp_output = root / 'hcp-output'
+        hcp_output.mkdir()
+        hcp_vars = dict(flat, azure_region='westeurope', aro_deploy_hcp=True, expected_hcp=True,
+                        expected_region='westeurope', expected_worker_count=2, output_dir=str(hcp_output),
+                        ansible_python_interpreter=sys.executable)
+        hcp_archive = hcp_output / 'openshift-cluster_test_azure_ownership.json'
+        for label, overrides, success in [('new-hcp', {}, True), ('reuse-hcp', {}, True),
+                                           ('mode-switch', dict(aro_deploy_hcp=False), False)]:
+            variables_file = root / ('hcp-' + label + '.json')
+            variables_file.write_text(json.dumps(dict(hcp_vars, **overrides)))
+            before = hcp_archive.read_text() if hcp_archive.exists() else None
+            run = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook',
+                                  str(collection / 'tests/integration/initialize.yml'), '-e', '@' + str(variables_file)],
+                                 cwd=collection, env=dict(env, AZURE_TEST_REGION='westeurope'),
+                                 text=True, capture_output=True, check=False)
+            if ((run.returncode == 0) != success or (not success and hcp_archive.read_text() != before)
+                    or 'hcp_recover_vault' in json.loads(hcp_archive.read_text())['settings']):
+                print(run.stdout + run.stderr)
+                return 1
+            print('PASS: HCP ownership case ' + label)
+        # A classic archive written before the flag existed must still load unchanged.
+        legacy_classic = json.loads(ownership_file.read_text())
+        legacy_classic['settings'].pop('hcp', None)
+        legacy_classic['settings'].update(master_size='Standard_D8s_v5', worker_size='Standard_D4s_v5')
+        ownership_file.write_text(json.dumps(legacy_classic))
+        legacy_vars = dict(flat, output_dir=str(output), ansible_python_interpreter=sys.executable)
+        variables_file = root / 'legacy-classic.json'
+        variables_file.write_text(json.dumps(legacy_vars))
+        run = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook',
+                              str(collection / 'tests/integration/initialize.yml'), '-e', '@' + str(variables_file)],
+                             cwd=collection, env=env, text=True, capture_output=True, check=False)
+        if run.returncode:
+            print(run.stdout + run.stderr)
+            return 1
+        print('PASS: legacy classic archive without HCP flag')
         return 0
 
 

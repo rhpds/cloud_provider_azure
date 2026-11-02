@@ -128,8 +128,12 @@ class Azure:
 
     def check_aro_size_change(self, settings):
         if self.group(settings['cluster_group'], settings['region']):
-            cluster = self.call('aro', 'show', '-g', settings['cluster_group'],
-                                '-n', settings['cluster_name'], missing=True)
+            if settings.get('hcp'):
+                from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.hcp import HCP
+                cluster = HCP(self, settings).show()
+            else:
+                cluster = self.call('aro', 'show', '-g', settings['cluster_group'],
+                                    '-n', settings['cluster_name'], missing=True)
             if cluster is not None:
                 raise AzureError('ARO node sizes can change only before cluster creation; '
                                  'set aro_master_vm_size and aro_worker_vm_size to their recorded values '
@@ -256,5 +260,9 @@ class Azure:
                 self.changed = True
         cluster = None
         if s['method'] == 'aro' and self.group(s['cluster_group'], s['region']):
-            cluster = self.call('aro', 'show', '-g', s['cluster_group'], '-n', s['cluster_name'], missing=True)
+            if s.get('hcp'):
+                from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.hcp import HCP
+                cluster = HCP(self, s).show()
+            else:
+                cluster = self.call('aro', 'show', '-g', s['cluster_group'], '-n', s['cluster_name'], missing=True)
         return dict(vms=vms, cluster=cluster)

@@ -16,7 +16,11 @@ module_spec = importlib.util.spec_from_file_location('azure_environment', ROOT /
 module = importlib.util.module_from_spec(module_spec)
 with patch.dict(sys.modules, {
         'ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.provider': provider}):
-    module_spec.loader.exec_module(module)
+    hcp_spec = importlib.util.spec_from_file_location('hcp_provider', ROOT / 'plugins/module_utils/hcp.py')
+    hcp = importlib.util.module_from_spec(hcp_spec)
+    hcp_spec.loader.exec_module(hcp)
+    with patch.dict(sys.modules, {'ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.hcp': hcp}):
+        module_spec.loader.exec_module(module)
 
 
 class ModuleResultTests(unittest.TestCase):

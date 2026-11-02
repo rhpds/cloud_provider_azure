@@ -21,9 +21,11 @@
       - azure_auth.password == 'synthetic-password'
       - azure_auth.tenant == 'synthetic-tenant'
       - azure_auth.resource_group == 'sandbox'
-      - azure_settings.region == 'eastus'
+      - azure_settings.region == (expected_region | default('eastus'))
       - azure_settings.sandbox_group == 'sandbox'
       - azure_settings.dns_zone == 'test.azure.redhatworkshops.io'
       - azure_settings.master_size == (expected_master_size | default('Standard_D8s_v5'))
       - azure_settings.worker_size == (expected_worker_size | default('Standard_D4s_v5'))
+      - azure_settings.hcp == (expected_hcp | default(false))
+      - azure_settings.worker_count == (expected_worker_count | default(3))
     no_log: true
