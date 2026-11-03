@@ -191,14 +191,17 @@ and its IPI state have been lost, recover the installer state before destruction
 the provider intentionally refuses to delete a remaining IPI group blindly.
 Do not put unrelated resources in deployment-owned groups.
 
-Provision retries may correct an archived region only after a read-only check
-confirms that the infrastructure, cluster and ARO-managed resource groups are
-all absent. Lifecycle/destroy jobs must use the original region. Other ownership
-settings remain fixed; this does not move a deployment between regions. Errors
-identify changed public input names and archived/requested values. Sandbox
-validation runs before writing the archive, so failed initialization does not
-record invalid settings. Keep the archive rather than deleting it to bypass a
-mismatch.
+After destroy or an initialization that created no resources, provision may
+replace archived cluster settings, including classic ARO versus HCP, region,
+worker count, version and network CIDRs. Read-only checks must confirm that all
+archived infrastructure, cluster and ARO-managed resource groups are absent.
+Subscription, project tag, sandbox group, deployment group names, cluster name
+and DNS zone remain fixed. Existing resources or authorization errors block the
+change and preserve the archive. Lifecycle/destroy jobs require the original
+cluster settings and region. Errors identify changed public input names and
+archived/requested values. Sandbox validation runs before writing the archive,
+so failed initialization does not record invalid settings. Keep the archive
+rather than deleting it to bypass a mismatch.
 
 `start`, `stop`, and `status` apply to the bastion and self-managed cluster VMs.
 For ARO they report cluster status but only start/deallocate the bastion.

@@ -88,16 +88,22 @@ It is written with mode `u=rw,go=`. Keep the original variables and archive for
 subsequent lifecycle/destroy runs. Changes to ownership boundaries are rejected.
 Before a cluster exists, ARO master/worker sizes may change after a read-only
 absence check. For an existing cluster, provision rejects changed sizes and
-lifecycle/destroy retain the archived sizes. Other settings must still match.
+lifecycle/destroy retain the archived sizes.
 
-A provision retry may also correct a region archived by an earlier failed
-initialization, but only after read-only checks establish that the infrastructure,
-cluster and ARO-managed resource groups are all absent. An existing group or
-authorization error prevents that change. Subscription, project, group names,
-DNS ownership and the other recorded settings must still match. This does not
-move existing resources between regions. Lifecycle/destroy jobs must always use
-the original region; mismatch errors show the public input names and their
-archived/requested values without exposing credentials.
+A provisioning run may replace archived cluster settings after a completed
+cleanup or an initialization that never created resources. This includes
+switching between classic ARO and HCP, changing region, worker count, OpenShift
+version or network CIDRs. Read-only Azure checks must first confirm that the
+archived infrastructure, cluster and ARO-managed resource groups are all absent.
+An existing group, an ownership mismatch or an authorization error prevents the
+change and preserves the archive. This does not modify an existing deployment.
+
+Subscription, project tag, sandbox resource group, infrastructure/cluster group
+names, cluster name and DNS zone must still match the archived ownership
+boundaries. Lifecycle/destroy jobs require the original cluster settings and
+region; mismatch errors show public input names and their archived/requested
+values without exposing credentials. Keep the ownership archive after destroy;
+provision verifies that cleanup completed before recording the new settings.
 
 Sandbox group/zone validation completes before the archive is written. A failed
 validation therefore cannot create a new ownership record or replace an existing

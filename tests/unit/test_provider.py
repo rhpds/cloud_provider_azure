@@ -249,6 +249,29 @@ class ProviderTests(unittest.TestCase):
             self.az.check_aro_size_change(self.s)
         self.assertFalse(self.az.changed)
 
+    def test_deployment_settings_change_checks_groups_without_mutating_azure(self):
+        self.responses = [(1, 'ResourceGroupNotFound')] * 3
+        self.az.check_deployment_change(self.s)
+        self.assertEqual([call[call.index('--name') + 1] for call in self.calls],
+                         ['infra', 'cluster', 'cluster-managed'])
+        self.assertTrue(all(call[1:3] == ['group', 'show'] for call in self.calls))
+        self.assertFalse(self.az.changed)
+
+    def test_deployment_settings_change_refuses_remaining_or_inaccessible_groups(self):
+        for index, name in enumerate(('infra', 'cluster', 'cluster-managed')):
+            for response, message in (
+                    ((0, {'tags': {'agnosticd_project': 'project'}}), 'restore the archived settings'),
+                    ((0, {'tags': {'agnosticd_project': 'other'}}), 'unowned'),
+                    ((1, 'ERROR: (AuthorizationFailed) Access denied.'), 'AuthorizationFailed')):
+                with self.subTest(group=name, message=message):
+                    self.calls.clear()
+                    self.responses = [(1, 'ResourceGroupNotFound')] * index + [response]
+                    with self.assertRaisesRegex(provider.AzureError, message):
+                        self.az.check_deployment_change(self.s)
+                    self.assertEqual(len(self.calls), index + 1)
+                    self.assertTrue(all(call[1:3] == ['group', 'show'] for call in self.calls))
+                    self.assertFalse(self.az.changed)
+
     def test_region_change_checks_all_deployment_groups_without_mutating_azure(self):
         self.responses = [(1, 'ResourceGroupNotFound')] * 3
         self.az.check_region_change(self.s)

@@ -118,10 +118,15 @@
     - saved.subscription_id == azure_auth.subscription_id
     - saved.project == project_tag
     - >-
+      (saved.settings | dict2items | selectattr('key', 'in',
+      ['sandbox_group', 'infra_group', 'cluster_group', 'cluster_name', 'dns_zone']) | items2dict) ==
+      (azure_settings | dict2items | selectattr('key', 'in',
+      ['sandbox_group', 'infra_group', 'cluster_group', 'cluster_name', 'dns_zone']) | items2dict)
+    - >-
+      ACTION | default('provision') == 'provision' or
       (saved.settings | combine({'hcp': saved.settings.hcp | default(false)})
-       | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size', 'region']) | items2dict) ==
-      (azure_settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size', 'region']) | items2dict)
-    - saved.settings.region == azure_settings.region or ACTION | default('provision') == 'provision'
+      | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size']) | items2dict) ==
+      (azure_settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size']) | items2dict)
     fail_msg: |-
       Deployment settings differ from archived ownership. Restore the original inputs for lifecycle/destroy jobs.
       {% if saved.subscription_id != azure_auth.subscription_id %}
@@ -145,18 +150,22 @@
       {{ variable }}: archived={{ saved.settings.get(field) | to_json }}, requested={{ azure_settings.get(field) | to_json }}
       {% endif %}
       {% endfor %}
-      A provisioning run can change region only after verifying that all deployment resource groups are absent.
+      A provisioning run can change cluster settings only after verifying that all deployment resource groups are absent. Ownership boundaries must still match.
 
 - name: Verify deployment groups are absent before accepting a changed region
   when:
   - azure_ownership_stat.stat.exists
-  - saved.settings.region != azure_settings.region
+  - ACTION | default('provision') == 'provision'
+  - >-
+    (saved.settings | combine({'hcp': saved.settings.hcp | default(false)})
+    | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size']) | items2dict) !=
+    (azure_settings | dict2items | rejectattr('key', 'in', ['master_size', 'worker_size']) | items2dict)
   vars:
     saved: "{{ azure_ownership_slurp.content | b64decode | from_json }}"
   agnosticd.cloud_provider_azure.azure_environment:
-    action: check_region_change
+    action: check_deployment_change
     auth: "{{ azure_auth }}"
-    settings: "{{ azure_settings }}"
+    settings: "{{ saved.settings }}"
     config_dir: "{{ azure_cli_config_dir }}"
     project: "{{ project_tag }}"
 

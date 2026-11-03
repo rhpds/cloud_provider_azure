@@ -241,8 +241,7 @@ def main():
                         expected_region='eastus2', expected_worker_count=2, output_dir=str(hcp_output),
                         ansible_python_interpreter=sys.executable)
         hcp_archive = hcp_output / 'openshift-cluster_test_azure_ownership.json'
-        for label, overrides, success in [('new-hcp', {}, True), ('reuse-hcp', {}, True),
-                                           ('mode-switch', dict(aro_deploy_hcp=False), False)]:
+        for label, overrides, success in [('new-hcp', {}, True), ('reuse-hcp', {}, True)]:
             variables_file = root / ('hcp-' + label + '.json')
             variables_file.write_text(json.dumps(dict(hcp_vars, **overrides)))
             before = hcp_archive.read_text() if hcp_archive.exists() else None
@@ -255,6 +254,52 @@ def main():
                 print(run.stdout + run.stderr)
                 return 1
             print('PASS: HCP ownership case ' + label)
+        # Reuse a completed deployment's archive across HCP/classic modes only
+        # after every archived deployment group is absent. Failures preserve it.
+        hcp_saved = json.loads(hcp_archive.read_text())
+        classic_saved = json.loads(json.dumps(hcp_saved))
+        classic_saved['settings'] = {key: value for key, value in classic_saved['settings'].items()
+                                     if not key.startswith('hcp_')}
+        classic_saved['settings'].update(hcp=False, region='eastus', worker_count=3)
+        deployment_groups = [hcp_saved['settings']['infra_group'], hcp_saved['settings']['cluster_group'],
+                             hcp_saved['settings']['cluster_group'] + '-managed']
+        classic_vars = dict(hcp_vars, aro_deploy_hcp=False, expected_hcp=False, azure_region='eastus',
+                            expected_region='eastus', expected_worker_count=3)
+        transitions = [('hcp-to-classic', hcp_saved, classic_vars),
+                       ('classic-to-hcp', classic_saved, hcp_vars)]
+        for transition, archived, requested in transitions:
+            cases = [('after-destroy', [], 'provision', True),
+                     ('destroy-requires-original-settings', [], 'destroy', False),
+                     ('status-requires-original-settings', [], 'status', False)]
+            cases += [('existing-' + str(index), [group], 'provision', False)
+                      for index, group in enumerate(deployment_groups)]
+            for label, groups, action, success in cases:
+                hcp_archive.write_text(json.dumps(archived))
+                before = hcp_archive.read_text()
+                state = json.loads(original_state)
+                state['groups'] = {group: {'tags': {'agnosticd_project': 'openshift-cluster-test'}}
+                                   for group in groups}
+                state_file.write_text(json.dumps(state))
+                variables_file = root / (transition + '-' + label + '.json')
+                variables_file.write_text(json.dumps(dict(requested, ACTION=action)))
+                run = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook',
+                                      str(collection / 'tests/integration/initialize.yml'),
+                                      '-e', '@' + str(variables_file)],
+                                     cwd=collection, env=env, text=True, capture_output=True, check=False)
+                saved = json.loads(hcp_archive.read_text())
+                final_state = json.loads(state_file.read_text())
+                if ((run.returncode == 0) != success
+                        or (not success and hcp_archive.read_text() != before)
+                        or saved['resource_group_ids'] != archived['resource_group_ids']
+                        or (success and (saved['settings']['hcp'] != requested['expected_hcp']
+                                         or saved['settings']['region'] != requested['expected_region']
+                                         or saved['settings']['worker_count'] != requested['expected_worker_count']))
+                        or final_state != state or 'synthetic-password' in run.stdout):
+                    print('FAIL: deployment settings transition ' + transition + ' ' + label)
+                    print(run.stdout + run.stderr)
+                    return 1
+                print('PASS: deployment settings transition ' + transition + ' ' + label)
+        state_file.write_text(original_state)
         # A classic archive written before the flag existed must still load unchanged.
         legacy_classic = json.loads(ownership_file.read_text())
         legacy_classic['settings'].pop('hcp', None)

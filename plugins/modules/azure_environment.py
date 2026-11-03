@@ -133,7 +133,7 @@ options:
     description: Provider operation.
     type: str
     required: true
-    choices: [validate, installer_prepare, provision, inventory, destroy, check_region_change, aro_check_sizes, aro_install, aro_destroy, hcp_check_region, hcp_credentials, start, stop, status]
+    choices: [validate, installer_prepare, provision, inventory, destroy, check_region_change, check_deployment_change, aro_check_sizes, aro_install, aro_destroy, hcp_check_region, hcp_credentials, start, stop, status]
   template:
     description: Rendered ARM deployment template.
     type: dict
@@ -216,6 +216,9 @@ def execute(az, action, s, template):
     if action == 'aro_check_sizes':
         az.check_aro_size_change(s)
         return {}
+    if action == 'check_deployment_change':
+        az.check_deployment_change(s)
+        return {}
     if action == 'check_region_change':
         az.check_region_change(s)
         return {}
@@ -262,7 +265,7 @@ def argument_spec():
         settings=dict(type='dict', required=True, options=settings_options),
         config_dir=dict(type='path', required=True), project=dict(type='str', required=True),
         action=dict(type='str', required=True, choices=['validate', 'installer_prepare', 'provision', 'inventory', 'destroy',
-                    'check_region_change', 'aro_check_sizes', 'aro_install', 'aro_destroy', 'hcp_check_region', 'hcp_credentials',
+                    'check_region_change', 'check_deployment_change', 'aro_check_sizes', 'aro_install', 'aro_destroy', 'hcp_check_region', 'hcp_credentials',
                     'start', 'stop', 'status']),
         template=dict(type='dict', default={}))
 

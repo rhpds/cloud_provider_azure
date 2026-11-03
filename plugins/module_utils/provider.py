@@ -146,12 +146,15 @@ class Azure:
                                  'for an existing cluster')
 
     def check_region_change(self, settings):
-        # A failed initialization may have archived settings before any Azure
-        # deployment existed. Never retarget resources left in the old region.
+        self.check_deployment_change(settings, 'Azure region', 'region')
+
+    def check_deployment_change(self, settings, description='Azure deployment settings', archived='settings'):
+        # Inspect archived groups before replacing their recorded cluster settings.
+        # A failed initialization or completed destroy may leave only the archive.
         for name in (settings['infra_group'], settings['cluster_group'], settings['cluster_group'] + '-managed'):
             if self.group(name, settings['region']):
-                raise AzureError('Cannot change Azure region while a deployment resource group exists; '
-                                 'restore the archived region and complete destruction first: ' + name)
+                raise AzureError('Cannot change ' + description + ' while a deployment resource group exists; '
+                                 'restore the archived ' + archived + ' and complete destruction first: ' + name)
 
     def preflight(self, s):
         for provider in ('Microsoft.Compute', 'Microsoft.Storage', 'Microsoft.Network',
