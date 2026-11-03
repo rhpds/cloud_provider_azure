@@ -117,6 +117,11 @@ default and requires managed identity. No openshift-install program is used in
 either ARO architecture. See the collection's HCP section and initialize/defaults
 for region, quota, version, subnet and recovery requirements.
 
+Vault ownership comparisons use Azure resource IDs (`/subscriptions/...`),
+not management API URLs. Recovery requires the validated archive and an exact
+case-insensitive match of the deleted vault's original subscription, resource
+group and vault name. An active vault must also carry the deployment project tag.
+
 The encryption vault enables soft delete with a seven-day retention period.
 Its ARM template deliberately omits `enablePurgeProtection`: the Key Vault API
 rejects an explicit `false`, including on initial creation. Omission leaves new

@@ -39,10 +39,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 class HCP:
     def __init__(self, azure, settings):
         self.az, self.s = azure, settings
-        self.root = ('https://management.azure.com/subscriptions/' + azure.auth['subscription_id']
-                     + '/resourceGroups/' + settings['cluster_group'])
+        self.resource_group_id = ('/subscriptions/' + azure.auth['subscription_id']
+                                  + '/resourceGroups/' + settings['cluster_group'])
+        self.root = 'https://management.azure.com' + self.resource_group_id
         self.url = self.root + '/providers/Microsoft.RedHatOpenShift/hcpOpenShiftClusters/' + settings['cluster_name']
         self.vault = 'hcp-' + hashlib.sha256((azure.auth['subscription_id'] + '/' + azure.project).encode()).hexdigest()[:20]
+        self.vault_id = self.resource_group_id + '/providers/Microsoft.KeyVault/vaults/' + self.vault
         if settings.get('hcp_vault_name') and settings['hcp_vault_name'] != self.vault:
             raise AzureError('HCP vault identity differs from deterministic ownership')
 
@@ -204,13 +206,13 @@ class HCP:
             vault = self.az.call('keyvault', 'show', '--name', self.vault,
                                  '--resource-group', s['cluster_group'], missing=True)
             if vault and (not owned(vault, self.az.project) or vault['id'].lower() !=
-                          (self.root + '/providers/Microsoft.KeyVault/vaults/' + self.vault).lower()):
+                          self.vault_id.lower()):
                 raise AzureError('Refusing an unowned HCP encryption vault')
             # Only a matching trusted archive permits recovery of this deterministic vault.
             deleted = self.az.call('keyvault', 'list-deleted')
             for vault in deleted:
                 if vault['name'] == self.vault:
-                    expected = self.root + '/providers/Microsoft.KeyVault/vaults/' + self.vault
+                    expected = self.vault_id
                     if not s.get('hcp_recover_vault') or vault['properties']['vaultId'].lower() != expected.lower():
                         raise AzureError('Refusing recovery of a vault without matching archived ownership')
                     self.az.call('keyvault', 'recover', '--name', self.vault, '--resource-group', s['cluster_group'])

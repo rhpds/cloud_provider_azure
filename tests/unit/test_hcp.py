@@ -101,7 +101,7 @@ class HCPTests(unittest.TestCase):
         self.h.preflight = Mock()
         self.az.call.side_effect = lambda *args, **kwargs: (
             {'registrationState': 'Registered'} if args[0] == 'provider' else
-            [{'name': self.h.vault, 'properties': {'vaultId': self.h.root + '/providers/Microsoft.KeyVault/vaults/' + self.h.vault}}]
+            [{'name': self.h.vault, 'properties': {'vaultId': '/subscriptions/subscription/resourceGroups/cluster/providers/Microsoft.KeyVault/vaults/' + self.h.vault}}]
             if args[:2] == ('keyvault', 'list-deleted') else None)
         with self.assertRaisesRegex(provider.AzureError, 'without matching archived ownership'):
             self.h.install('/unused/template.json')
@@ -147,11 +147,62 @@ class HCPTests(unittest.TestCase):
                 return {'registrationState': 'Registered'}
             if args[:2] == ('keyvault', 'list-deleted'):
                 return [{'name': self.h.vault, 'properties': {
-                    'vaultId': self.h.root + '/providers/Microsoft.KeyVault/vaults/' + self.h.vault}}]
+                    'vaultId': '/subscriptions/subscription/resourceGroups/cluster/providers/Microsoft.KeyVault/vaults/' + self.h.vault}}]
             return None
         self.az.call.side_effect = cli
         self.h.install('hcp.json')
         self.assertTrue(any(c.args[:2] == ('keyvault', 'recover') for c in self.az.call.call_args_list))
+
+    def test_matching_archive_refuses_deleted_vault_from_another_resource_scope(self):
+        self.h.show = Mock(return_value=None)
+        self.h.preflight = Mock()
+        self.s['hcp_recover_vault'] = True
+        expected = '/subscriptions/subscription/resourceGroups/cluster/providers/Microsoft.KeyVault/vaults/' + self.h.vault
+        for resource_id in (expected.replace('/subscription/', '/other-subscription/'),
+                            expected.replace('/cluster/', '/other-group/'),
+                            'https://management.azure.com' + expected):
+            with self.subTest(resource_id=resource_id):
+                self.az.call.reset_mock()
+                self.az.call.side_effect = lambda *args, **kwargs: (
+                    {'registrationState': 'Registered'} if args[0] == 'provider' else
+                    [{'name': self.h.vault, 'properties': {'vaultId': resource_id}}]
+                    if args[:2] == ('keyvault', 'list-deleted') else None)
+                with self.assertRaisesRegex(provider.AzureError, 'without matching archived ownership'):
+                    self.h.install('hcp.json')
+                self.assertFalse(any(c.args[:2] == ('keyvault', 'recover') for c in self.az.call.call_args_list))
+
+    def test_existing_vault_uses_resource_id_and_project_ownership(self):
+        self.h.show = Mock(return_value=None)
+        self.h.preflight = Mock()
+        self.h.physical_zone = 'eastus2-az1'
+        self.h.wait = Mock(return_value=self.ready())
+        expected = '/subscriptions/subscription/resourceGroups/cluster/providers/Microsoft.KeyVault/vaults/' + self.h.vault
+        for resource_id, project, success in ((expected.upper(), 'project', True),
+                                              (expected, 'other-project', False),
+                                              (expected.replace('/cluster/', '/other-group/'), 'project', False)):
+            with self.subTest(resource_id=resource_id, project=project):
+                self.az.call.reset_mock()
+
+                def cli(*args, **kwargs):
+                    if args[0] == 'provider':
+                        return {'registrationState': 'Registered'}
+                    if args[:2] == ('keyvault', 'show'):
+                        return {'id': resource_id, 'tags': {'agnosticd_project': project}}
+                    if args[:2] == ('keyvault', 'list-deleted'):
+                        return []
+                    return None
+
+                self.az.call.side_effect = cli
+                if success:
+                    self.h.install('hcp.json')
+                    self.assertTrue(any(c.args[:3] == ('deployment', 'group', 'create')
+                                        for c in self.az.call.call_args_list))
+                else:
+                    with self.assertRaisesRegex(provider.AzureError, 'unowned HCP encryption vault'):
+                        self.h.install('hcp.json')
+                    self.assertFalse(any(c.args[:3] == ('deployment', 'group', 'create')
+                                         for c in self.az.call.call_args_list))
+                self.assertFalse(any(c.args[:2] == ('keyvault', 'recover') for c in self.az.call.call_args_list))
 
     def test_operation_url_cannot_forward_credentials_to_another_host(self):
         self.az.call.return_value = {'accessToken': 'secret-token'}
