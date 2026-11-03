@@ -178,7 +178,9 @@ class HCPTests(unittest.TestCase):
         self.assertIn('Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools', types)
         self.assertNotIn('Microsoft.Compute/virtualMachines', types)
         vault = next(r for r in resources if r['type'] == 'Microsoft.KeyVault/vaults')
-        self.assertFalse(vault['properties']['enablePurgeProtection'])
+        # Key Vault rejects explicit false, including on first creation. Omitting
+        # the setting also avoids disabling protection on an existing vault.
+        self.assertNotIn('enablePurgeProtection', vault['properties'])
         self.assertEqual(vault['properties']['softDeleteRetentionInDays'], 7)
         pool = next(r for r in resources if r['type'].endswith('/nodePools'))
         self.assertEqual(pool['properties']['platform']['availabilityZone'], "[parameters('workerZone')]")

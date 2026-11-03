@@ -130,7 +130,8 @@ resource customerKeyVault 'Microsoft.KeyVault/vaults@2024-12-01-preview' = {
     enableRbacAuthorization: true
     enableSoftDelete: true
     softDeleteRetentionInDays: 7
-    enablePurgeProtection: false
+    // Omit purge protection: Key Vault rejects explicit false, even on creation.
+    // Existing or recovered vaults retain their purge-protection setting.
     tenantId: subscription().tenantId
     publicNetworkAccess: privateKeyVault ? 'Disabled' : 'Enabled'
     sku: {

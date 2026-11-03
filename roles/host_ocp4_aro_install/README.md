@@ -116,3 +116,13 @@ The classic password login/access task file is skipped. HCP uses two workers by
 default and requires managed identity. No openshift-install program is used in
 either ARO architecture. See the collection's HCP section and initialize/defaults
 for region, quota, version, subnet and recovery requirements.
+
+The encryption vault enables soft delete with a seven-day retention period.
+Its ARM template deliberately omits `enablePurgeProtection`: the Key Vault API
+rejects an explicit `false`, including on initial creation. Omission leaves new
+vaults at Azure's default and preserves protection on existing or recovered
+vaults. The role never disables purge protection or automatically purges vaults.
+If vault creation fails before an HCP cluster exists, rerun provisioning after
+correcting the template; owned networking and identities from the partial
+deployment are reused. An existing failed HCP cluster still requires explicit
+destruction before recreation.

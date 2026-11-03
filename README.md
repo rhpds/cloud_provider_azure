@@ -295,6 +295,12 @@ prerequisites. On failure prerequisites remain. The vault's seven-day soft-delet
 recovery window is retained; it is never purged automatically. A matching trusted
 archive permits recovery of that exact deterministic vault on a later retry.
 
+The vault template omits `enablePurgeProtection` because the Key Vault API rejects
+an explicit `false` even for a new vault. New vaults use Azure's default; existing
+or recovered vaults retain their protection setting. A vault-creation failure
+before cluster creation can be retried using the same owned prerequisites after
+correcting the template.
+
 HCP has no built-in kubeadmin login/password. The
 [host_ocp4_aro_hcp_credentials role](roles/host_ocp4_aro_hcp_credentials/README.md)
 issues temporary admin access, exports the standard kubeconfig and records its
