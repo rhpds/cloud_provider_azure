@@ -56,17 +56,38 @@ class HCPTests(unittest.TestCase):
 
     def test_deletion_failure_preserves_group_and_encryption_prerequisites(self):
         self.h.show = Mock(return_value=self.ready())
-        self.h.rest = Mock(side_effect=[{'value': [{'name': 'workers'}]}, provider.AzureError('Conflict')])
+        self.h.rest = Mock(side_effect=provider.AzureError('Conflict'))
         with self.assertRaises(provider.AzureError):
             self.h.destroy()
+        self.h.rest.assert_called_once_with('DELETE', self.h.url + '?api-version=' + hcp.API, missing=True)
         self.az.delete_group.assert_not_called()
 
     def test_delete_waits_for_cluster_and_managed_group_before_prerequisites(self):
+        self.h.show = Mock(side_effect=[self.ready(), self.ready(), None])
+        self.h.rest = Mock(return_value={})
+        self.az.call.side_effect = [{'name': 'cluster-managed'}, None]
+        def delete_prerequisites(*args):
+            self.assertEqual(self.h.show.call_count, 3)
+            self.assertEqual(self.az.call.call_count, 2)
+        self.az.delete_group.side_effect = delete_prerequisites
+        with patch.object(hcp.time, 'sleep'):
+            self.h.destroy()
+        self.h.rest.assert_called_once_with('DELETE', self.h.url + '?api-version=' + hcp.API, missing=True)
+        self.az.delete_group.assert_called_once_with('cluster', 'eastus2')
+
+    def test_destroy_cascades_through_cluster_when_last_pool_has_failed(self):
         self.h.show = Mock(side_effect=[self.ready(), None])
-        self.h.rest = Mock(return_value={'value': [{'name': 'workers'}]})
         self.az.call.return_value = None
+        def api(method, url, **kwargs):
+            if method == 'GET' and '/nodePools?' in url:
+                return {'value': [{'name': 'workers', 'properties': {'provisioningState': 'Failed'}}]}
+            if method == 'DELETE' and '/nodePools/' in url:
+                raise provider.AzureError('Forbidden: The last node pool can not be deleted from a cluster')
+            self.assertEqual((method, url), ('DELETE', self.h.url + '?api-version=' + hcp.API))
+            return {}
+        self.h.rest = Mock(side_effect=api)
         self.h.destroy()
-        self.assertIn('/nodePools/workers?', self.h.rest.call_args_list[1].args[1])
+        self.h.rest.assert_called_once_with('DELETE', self.h.url + '?api-version=' + hcp.API, missing=True)
         self.az.delete_group.assert_called_once_with('cluster', 'eastus2')
 
     def test_repeated_destroy_is_noop(self):

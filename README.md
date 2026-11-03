@@ -290,10 +290,12 @@ there is no runtime Bicep compiler or preview CLI extension dependency. The
 provider creates operator identities, scoped role assignments, dedicated VNet
 integration, and an encryption key/vault before the cluster and worker pool.
 Failed resource states require explicit destruction; ready resources are reused.
-Destroy deletes pools/cluster and waits for managed-group removal before deleting
-prerequisites. On failure prerequisites remain. The vault's seven-day soft-delete
-recovery window is retained; it is never purged automatically. A matching trusted
-archive permits recovery of that exact deterministic vault on a later retry.
+Destroy deletes the parent cluster, which cascades to its node pools, and waits
+for cluster and managed-group removal before deleting prerequisites. Azure rejects
+deleting the last node pool independently, including a failed pool. On failure
+prerequisites remain. The vault's seven-day soft-delete recovery window is
+retained; it is never purged automatically. A matching trusted archive permits
+recovery of that exact deterministic vault on a later retry.
 
 The vault template omits `enablePurgeProtection` because the Key Vault API rejects
 an explicit `false` even for a new vault. New vaults use Azure's default; existing

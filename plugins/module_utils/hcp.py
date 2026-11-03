@@ -265,10 +265,8 @@ class HCP:
             if not owned(cluster, self.az.project):
                 raise AzureError('Refusing unowned HCP cluster')
             if cluster.get('properties', {}).get('provisioningState') != 'Deleting':
-                pools = self.rest('GET', self.url + '/nodePools?api-version=' + API, missing=True) or {}
-                for pool in pools.get('value', []):
-                    self.rest('DELETE', self.url + '/nodePools/' + pool['name'].split('/')[-1]
-                              + '?api-version=' + API, missing=True)
+                # Cluster deletion cascades to its pools. Deleting the last pool
+                # separately is forbidden, including when pool provisioning failed.
                 self.rest('DELETE', self.url + '?api-version=' + API, missing=True)
             deadline = time.monotonic() + 7200
             while self.show():

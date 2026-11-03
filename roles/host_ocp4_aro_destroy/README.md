@@ -40,8 +40,13 @@ The supplied sandbox group, zone and service principal are preserved. Bastion
 infrastructure is intentionally left for `template_destroy` after cluster cleanup.
 There are no public access facts or kubeconfig outputs from this role.
 
-For HCP archives the same role dispatches to the HCP API: delete node pools,
-then the cluster, wait for the service-managed group to disappear, and only then
-remove the owned prerequisite group. Its encryption vault remains soft-deleted
-for Azure's seven-day recovery window; no purge is performed. Failed deletion
-preserves the identities, network and encryption prerequisites for retry.
+For HCP archives the same role dispatches to the HCP API: delete the parent
+cluster, let Azure cascade deletion to its node pools, wait for both the cluster
+and service-managed group to disappear, and only then remove the owned
+prerequisite group. Azure rejects deleting the last node pool independently,
+including a failed pool; no separate pool-delete requests are sent. This also
+allows cleanup after worker provisioning failed. See Microsoft's
+[HCP cluster deletion guide](https://learn.microsoft.com/azure/openshift/delete-hosted-control-planes-cluster).
+Its encryption vault remains soft-deleted for Azure's seven-day recovery window;
+no purge is performed. Failed deletion preserves the identities, network and
+encryption prerequisites for retry.
