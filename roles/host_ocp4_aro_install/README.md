@@ -109,6 +109,12 @@ an `include_role` task. See the v2 Azure sample for credential and version input
 
 ## HCP branch
 
+HCP remains experimental: the latest live test created a ready control plane,
+but its worker pool failed with Azure `DeadlineExceeded` and
+`hypershift node pool not cached yet`. The underlying cause remains under
+engineering investigation. See the collection guide's
+[live validation status](../../README.md#live-validation-status) before opting in.
+
 With `aro_deploy_hcp: true`, the provider uses the HCP resource type and owned
 ARM prerequisites instead of the classic API. It waits for cluster and node pool,
 installs the exact selected client, then invokes `host_ocp4_aro_hcp_credentials`.

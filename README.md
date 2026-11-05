@@ -243,10 +243,29 @@ References: [Microsoft ARO creation](https://learn.microsoft.com/en-us/azure/ope
 
 ## Hosted control planes (preview)
 
+### Live validation status
+
+Self-managed Azure IPI and standard ARO have completed live provisioning tests.
+HCP remains experimental. The latest HCP test created a ready control plane in
+`westeurope`, but the worker pool failed with Azure `DeadlineExceeded` and
+`hypershift node pool not cached yet`; no worker VMs appeared. The underlying
+cause remains under engineering investigation. Offline checks cover the provider
+logic but do not establish successful HCP provisioning. Leave `aro_deploy_hcp`
+false to use the validated standard ARO path.
+
+The failure is a terminal Azure deployment state, so increasing the Ansible
+timeout cannot recover that operation. Preserve the failed deployment's ARM
+operation details and correlation ID for the HCP engineering investigation.
+The collection does not automatically delete and recreate failed resources.
+
+### Configuration and lifecycle
+
 Set `host_ocp4_deploy_installation_method: aro` and `aro_deploy_hcp: true` for a
 NEW deployment. Default false preserves standard ARO. Missing flags in existing
-archives mean standard ARO; switching architectures for an archived GUID is
-refused. Keep using the existing ARO install/destroy roles.
+archives mean standard ARO. Lifecycle/destroy jobs require the archived
+architecture. A provision run can replace archived cluster settings only after
+verifying that all deployment groups are absent. Keep the ownership archive and
+continue using the existing ARO install/destroy roles.
 
 HCP defaults to two Standard_D4s_v5 workers in one node pool/zone, public API and
 ingress, managed identities, OVN-Kubernetes, and a public owned encryption vault.
