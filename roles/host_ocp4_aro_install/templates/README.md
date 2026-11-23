@@ -7,8 +7,10 @@ https://learn.microsoft.com/azure/openshift/howto-create-custom-hosted-cluster
 
 Regenerate locally with `bicep build hcp.bicep` after source edits and inspect the
 compiled JSON diff. The source defines all operator identities and scoped Azure
-role assignments; the provider passes explicit network, version, sizing and
-ownership parameters. Both cluster and node pool use API `2026-09-01-preview`.
+role assignments; the provider passes explicit network, control plane version
+and ownership parameters. After the cluster reaches `Succeeded`, the provider
+creates the worker pool separately using the subnet ID returned by the cluster.
+Both operations use API `2026-10-01`.
 Key Vault is public/RBAC-enabled, with seven-day soft deletion and no automatic
 purging. No customer control-plane VM resources are present in this template.
 

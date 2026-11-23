@@ -8,6 +8,14 @@
     - aro_identity_mode in ['managed_identity', 'service_principal']
     fail_msg: A valid guid and a supported installation method and identity mode are required
 
+- name: Require an OpenShift 5 patch release for HCP provisioning
+  when:
+  - aro_deploy_hcp | bool
+  - ACTION | default('provision') == 'provision'
+  ansible.builtin.assert:
+    that: aro_version is match('^5[.][0-9]+[.][0-9]+$')
+    fail_msg: Set aro_version to an exact stable OpenShift 5 patch advertised by Azure for the HCP region
+
 - name: Validate nested sandbox payload when supplied
   when: azure_sandbox is defined
   ansible.builtin.assert:

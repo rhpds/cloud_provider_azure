@@ -2,7 +2,7 @@
 
 Collection namespace: `agnosticd.cloud_provider_azure`. This collection supports
 new v2 deployments: a Linux bastion, self-managed Azure OpenShift IPI and standard
-architecture ARO, with opt-in ARO Hosted Control Planes (HCP) preview support.
+architecture ARO, with opt-in ARO hosted control planes (HCP) on OpenShift 5.
 
 ## Roles
 
@@ -241,22 +241,16 @@ References: [Microsoft ARO creation](https://learn.microsoft.com/en-us/azure/ope
 [ARO CLI](https://learn.microsoft.com/en-us/cli/azure/aro),
 [Red Hat Azure installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html-single/installing_on_azure/installing_on_azure).
 
-## Hosted control planes (preview)
+## Hosted control planes
 
 ### Live validation status
 
 Self-managed Azure IPI and standard ARO have completed live provisioning tests.
-HCP remains experimental. The latest HCP test created a ready control plane in
-`westeurope`, but the worker pool failed with Azure `DeadlineExceeded` and
-`hypershift node pool not cached yet`; no worker VMs appeared. The underlying
-cause remains under engineering investigation. Offline checks cover the provider
-logic but do not establish successful HCP provisioning. Leave `aro_deploy_hcp`
-false to use the validated standard ARO path.
-
-The failure is a terminal Azure deployment state, so increasing the Ansible
-timeout cannot recover that operation. Preserve the failed deployment's ARM
-operation details and correlation ID for the HCP engineering investigation.
-The collection does not automatically delete and recreate failed resources.
+The earlier preview test created a ready control plane in `westeurope` but
+worker provisioning failed with Azure `DeadlineExceeded`. This collection now
+follows the [Red Hat HCP quickstart](https://cloud.redhat.com/experts/aro/quickstart-hcp/)
+sequence on OpenShift 5. The updated flow has been checked offline and still
+needs a live provisioning test.
 
 ### Configuration and lifecycle
 
@@ -269,11 +263,14 @@ continue using the existing ARO install/destroy roles.
 
 HCP defaults to two Standard_D4s_v5 workers in one node pool/zone, public API and
 ingress, managed identities, OVN-Kubernetes, and a public owned encryption vault.
-`aro_version` must be an exact advertised HCP release: its minor selects the
-control plane, and its full version selects the node pool and client. Standard
-master size/subnet inputs are unused. See initialize/defaults for the pool,
-logical zone and integration CIDR options. Initialization queries Azure provider
-metadata for HCP-specific regions immediately after login, before reading ownership
+`aro_version` must be an enabled stable OpenShift 5 patch for new provisioning.
+Its minor selects the control plane and the full patch selects the pool and
+client. Keep the original version when running lifecycle or destroy against
+an older preview deployment. See initialize/defaults for the pool,
+logical zone and integration CIDR options. Use an empty zone for availability
+set placement. New HCP worker pools use Premium SSD OS disks.
+Initialization queries Azure provider metadata for HCP-specific regions
+immediately after login, before reading ownership
 archives or querying sandbox resources. Unsupported regions fail with the supported
 codes returned by Azure; the collection has no hardcoded region allowlist. The
 sandbox group's metadata location may differ from the deployment region; its
@@ -293,24 +290,27 @@ Azure returns display names (for example, `East US 2`); use their location codes
 case sensitivity and normalizes the returned locations. Missing HCP metadata or
 access failures abort validation without falling back to classic ARO locations.
 
-Discover regional HCP releases with this read-only command, replacing both
-placeholders (classic `az aro get-versions` queries a different resource type):
+Discover regional HCP patches with this read-only command in Azure CLI 2.93.0
+or later. Run it in the target subscription and substitute your region:
 
 ```sh
-az rest --method get --url \
-  'https://management.azure.com/subscriptions/<subscription-id>/providers/Microsoft.RedHatOpenShift/locations/<region>/hcpOpenShiftVersions?api-version=2026-09-01-preview'
+az aro hcp get-versions --location eastus2 --node-pools \
+  --query "[?ChannelGroup=='stable' && starts_with(Name, '5.')].Name" -o table
 ```
 
-Select an exact advertised release for `aro_version`. See Microsoft's
+Select a listed patch for `aro_version`. See Microsoft's
 [HCP configuration guide](https://learn.microsoft.com/azure/openshift/howto-choose-cluster-configuration)
-for current preview regions and permanent cluster settings, and the
+for supported regions and permanent cluster settings, and the
 [cluster creation guide](https://learn.microsoft.com/azure/openshift/howto-create-custom-hosted-cluster)
 for subscription permissions and resource prerequisites.
 
-HCP uses pinned ARM REST API 2026-09-01-preview and the checked-in ARM template;
-there is no runtime Bicep compiler or preview CLI extension dependency. The
-provider creates operator identities, scoped role assignments, dedicated VNet
-integration, and an encryption key/vault before the cluster and worker pool.
+HCP uses stable ARM API `2026-10-01` and the checked-in ARM template. The
+template deploys the control plane with operator identities, scoped role
+assignments, dedicated VNet integration and a customer-managed encryption key.
+After it reaches `Succeeded`, the provider creates the worker pool separately
+through ARM. A retry with a ready control plane and a missing pool resumes at
+pool creation. The automated flow uses the existing Azure CLI pin for
+authentication and ARM deployment and does not call `az aro hcp`.
 Failed resource states require explicit destruction; ready resources are reused.
 Destroy deletes the parent cluster, which cascades to its node pools, and waits
 for cluster and managed-group removal before deleting prerequisites. Azure rejects
@@ -335,5 +335,5 @@ automated upgrades are outside this initial implementation. Never use the
 standard password-based info role for HCP.
 
 The v2 sample `openshift-cluster-aro-hcp-azure.yml` documents required sandbox
-inputs and the preview defaults. Live HCP provisioning is not covered by the
+inputs and quickstart sizing. Live HCP provisioning is not covered by the
 offline test suite.

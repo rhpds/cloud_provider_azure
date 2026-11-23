@@ -237,11 +237,12 @@ def main():
         # Exercise real HCP normalization/archives through the module without any ARM HTTP calls.
         hcp_output = root / 'hcp-output'
         hcp_output.mkdir()
-        hcp_vars = dict(flat, azure_region='eastus2', aro_deploy_hcp=True, expected_hcp=True,
+        hcp_vars = dict(flat, azure_region='eastus2', aro_deploy_hcp=True, aro_version='5.0.1', expected_hcp=True,
                         expected_region='eastus2', expected_worker_count=2, output_dir=str(hcp_output),
                         ansible_python_interpreter=sys.executable)
         hcp_archive = hcp_output / 'openshift-cluster_test_azure_ownership.json'
-        for label, overrides, success in [('new-hcp', {}, True), ('reuse-hcp', {}, True)]:
+        for label, overrides, success in [('new-hcp', {}, True), ('reuse-hcp', {}, True),
+                                          ('reject-preview-version', {'aro_version': '4.22.1'}, False)]:
             variables_file = root / ('hcp-' + label + '.json')
             variables_file.write_text(json.dumps(dict(hcp_vars, **overrides)))
             before = hcp_archive.read_text() if hcp_archive.exists() else None
@@ -260,11 +261,12 @@ def main():
         classic_saved = json.loads(json.dumps(hcp_saved))
         classic_saved['settings'] = {key: value for key, value in classic_saved['settings'].items()
                                      if not key.startswith('hcp_')}
-        classic_saved['settings'].update(hcp=False, region='eastus', worker_count=3)
+        classic_version = legacy['settings']['version']
+        classic_saved['settings'].update(hcp=False, region='eastus', worker_count=3, version=classic_version)
         deployment_groups = [hcp_saved['settings']['infra_group'], hcp_saved['settings']['cluster_group'],
                              hcp_saved['settings']['cluster_group'] + '-managed']
         classic_vars = dict(hcp_vars, aro_deploy_hcp=False, expected_hcp=False, azure_region='eastus',
-                            expected_region='eastus', expected_worker_count=3)
+                            expected_region='eastus', expected_worker_count=3, aro_version=classic_version)
         transitions = [('hcp-to-classic', hcp_saved, classic_vars),
                        ('classic-to-hcp', classic_saved, hcp_vars)]
         for transition, archived, requested in transitions:

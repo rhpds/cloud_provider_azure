@@ -27,7 +27,7 @@
         config_dir: "/home/{{ ansible_user }}/.azure-agnosticd"
         project: "{{ project_tag }}"
       register: azure_aro_result
-      async: 7500
+      async: "{{ 14700 if hostvars.localhost.azure_settings.hcp | default(false) else 7500 }}"
       poll: 30
       no_log: true
     rescue:
@@ -51,7 +51,7 @@
           required={{ _diagnostic.required }}, available={{ _diagnostic.available }}
           ({{ 'worker surge and minimum HCP allowance' if _settings.hcp | default(false) else 'including bootstrap allowance' }}).
           {% elif _diagnostic.kind | default('') == 'version' %}
-          HCP release {{ _diagnostic.version }} is unavailable in this region; select an advertised release.
+          Select an enabled stable OpenShift 5 patch in this region. Requested release: {{ _diagnostic.version }}.
           {% else %}
           The protected provisioning operation failed; no credential-bearing output is displayed.
           {% endif %}

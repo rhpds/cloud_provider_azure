@@ -3,7 +3,7 @@
 Create or reconnect to a standard Azure Red Hat OpenShift cluster, configure
 bastion access, and export the cluster credentials to the controller. The v2
 `host_ocp4_deploy` dispatcher selects this role when
-`host_ocp4_deploy_installation_method: aro`. Set `aro_deploy_hcp: true` to select the HCP preview branch; see the collection guide.
+`host_ocp4_deploy_installation_method: aro`. Set `aro_deploy_hcp: true` to select HCP with OpenShift 5.
 
 ## Prerequisites and execution
 
@@ -109,15 +109,13 @@ an `include_role` task. See the v2 Azure sample for credential and version input
 
 ## HCP branch
 
-HCP remains experimental: the latest live test created a ready control plane,
-but its worker pool failed with Azure `DeadlineExceeded` and
-`hypershift node pool not cached yet`. The underlying cause remains under
-engineering investigation. See the collection guide's
-[live validation status](../../README.md#live-validation-status) before opting in.
+See the collection guide's [live validation status](../../README.md#live-validation-status).
 
 With `aro_deploy_hcp: true`, the provider uses the HCP resource type and owned
-ARM prerequisites instead of the classic API. It waits for cluster and node pool,
-installs the exact selected client, then invokes `host_ocp4_aro_hcp_credentials`.
+ARM prerequisites. It creates the worker pool after the OpenShift 5 control plane
+reaches `Succeeded`. If a retry finds a ready control plane without a pool, it
+resumes at pool creation. After the pool succeeds, the role installs the client
+for the selected patch and invokes `host_ocp4_aro_hcp_credentials`.
 The classic password login/access task file is skipped. HCP uses two workers by
 default and requires managed identity. No openshift-install program is used in
 either ARO architecture. See the collection's HCP section and initialize/defaults

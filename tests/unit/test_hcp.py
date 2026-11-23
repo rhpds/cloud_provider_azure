@@ -23,22 +23,35 @@ class HCPTests(unittest.TestCase):
         self.az.project = 'project'
         self.az.changed = False
         self.s = dict(cluster_group='cluster', cluster_name='aro-test', region='eastus2', method='aro',
-                      identity_mode='managed_identity', version='4.21.22', worker_count=2, worker_size='Standard_D4s_v5',
+                      identity_mode='managed_identity', version='5.0.1', worker_count=2, worker_size='Standard_D8s_v6',
                       worker_disk=128, hcp_nodepool='workers', hcp_zone='1', vnet_cidr='10.0.0.0/22',
                       worker_cidr='10.0.2.0/23', hcp_integration_cidr='10.0.0.0/28',
                       pod_cidr='10.128.0.0/14', service_cidr='172.30.0.0/16')
         self.h = hcp.HCP(self.az, self.s)
 
     def ready(self):
-        return {'tags': {'agnosticd_project': 'project'}, 'properties': {'provisioningState': 'Succeeded'}}
+        return {'tags': {'agnosticd_project': 'project'}, 'properties': {
+            'provisioningState': 'Succeeded', 'version': {'id': '5.0'}, 'platform': {'subnetId': '/test/worker-subnet'}}}
 
     def test_validate_rejects_identity_count_and_overlapping_networks(self):
         self.h.validate()
         for change in ({'identity_mode': 'service_principal'}, {'worker_count': 1},
-                       {'hcp_integration_cidr': '10.0.2.0/28'}, {'version': '4.21'}, {'cluster_name': 'bad_name'}):
+                       {'hcp_integration_cidr': '10.0.2.0/28'}, {'version': '5.0'}, {'cluster_name': 'bad_name'},
+                       {'hcp_nodepool': 'sixteenlettersss'}):
             with self.subTest(change=change), self.assertRaises(provider.AzureError):
                 hcp.HCP(self.az, dict(self.s, **change)).validate()
         self.az.call.assert_not_called()
+
+    def test_install_rejects_preview_version_but_destroy_still_works(self):
+        self.s['version'] = '4.21.22'
+        with self.assertRaisesRegex(provider.AzureError, 'exact OpenShift 5 release'):
+            self.h.install('/unused/template.json')
+        self.az.group.assert_not_called()
+        self.h.show = Mock(side_effect=[self.ready(), None])
+        self.h.rest = Mock()
+        self.az.call.return_value = None
+        self.h.destroy()
+        self.az.delete_group.assert_called_once_with('cluster', 'eastus2')
 
     def test_ready_cluster_and_pool_are_reused_without_deployment(self):
         self.h.show = Mock(return_value=self.ready())
@@ -111,7 +124,10 @@ class HCPTests(unittest.TestCase):
         self.h.show = Mock(return_value=None)
         self.h.preflight = Mock()
         self.h.physical_zone = 'eastus2-az2'
-        self.h.wait = Mock(return_value=self.ready())
+        operations = Mock()
+        self.h.wait = operations.wait
+        self.h.wait.return_value = self.ready()
+        self.h.rest = operations.rest
         captured = {}
         def cli(*args, **kwargs):
             if args[0] == 'provider':
@@ -123,24 +139,52 @@ class HCPTests(unittest.TestCase):
             if args[:2] == ('group', 'show'):
                 return None
             if args[:3] == ('deployment', 'group', 'create'):
+                operations.deploy()
                 captured.update(json.loads(Path(args[args.index('--parameters') + 1][1:]).read_text()))
                 return {}
             raise AssertionError(args)
         self.az.call.side_effect = cli
         self.h.install('hcp.json')
-        self.assertEqual(captured['workerCount']['value'], 2)
-        self.assertEqual(captured['clusterVersion']['value'], '4.21')
-        self.assertEqual(captured['nodePoolVersion']['value'], '4.21.22')
-        self.assertEqual(captured['workerZone']['value'], 'eastus2-az2')
+        self.assertEqual(captured['clusterVersion']['value'], '5.0')
+        self.assertNotIn('nodePoolVersion', captured)
         self.assertEqual(captured['customerKeyVaultName']['value'], self.h.vault)
-        self.assertEqual(self.h.wait.call_args_list[-1].args, ('/nodePools/workers',))
+        self.assertEqual([item[0] for item in operations.mock_calls], ['deploy', 'wait', 'rest', 'wait'])
+        method, url, body = self.h.rest.call_args.args
+        self.assertEqual((method, url), ('PUT', self.h.url + '/nodePools/workers?api-version=' + hcp.API))
+        self.assertEqual(body['properties']['version'], {'id': '5.0.1', 'channelGroup': 'stable'})
+        self.assertEqual(body['properties']['replicas'], 2)
+        self.assertEqual(body['properties']['platform']['subnetId'], '/test/worker-subnet')
+        self.assertEqual(body['properties']['platform']['availabilityZone'], 'eastus2-az2')
         self.assertTrue(self.az.changed)
+
+    def test_missing_pool_resumes_without_redeploying_cluster_or_pinning_zone(self):
+        self.h.show = Mock(side_effect=[self.ready(), None])
+        self.h.wait = Mock(return_value=self.ready())
+        self.h.rest = Mock()
+        self.h.preflight = Mock()
+        self.h.physical_zone = None
+        self.h.install('/unused/template.json')
+        self.az.call.assert_not_called()
+        self.h.preflight.assert_called_once_with()
+        self.assertNotIn('availabilityZone', self.h.rest.call_args.args[2]['properties']['platform'])
+        self.h.wait.assert_called_once_with('/nodePools/workers')
+
+    def test_failed_or_unowned_pool_is_never_recreated(self):
+        failed = self.ready()
+        failed['properties']['provisioningState'] = 'Failed'
+        for pool in (failed, {'tags': {}}):
+            self.h.show = Mock(side_effect=[self.ready(), pool, pool])
+            self.h.rest = Mock()
+            with self.assertRaises(provider.AzureError):
+                self.h.install('/unused/template.json')
+            self.h.rest.assert_not_called()
 
     def test_matching_archive_recovers_only_its_owned_soft_deleted_vault(self):
         self.h.show = Mock(return_value=None)
         self.h.preflight = Mock()
         self.h.physical_zone = 'eastus2-az1'
         self.h.wait = Mock(return_value=self.ready())
+        self.h.rest = Mock()
         self.s['hcp_recover_vault'] = True
         def cli(*args, **kwargs):
             if args[0] == 'provider':
@@ -176,6 +220,7 @@ class HCPTests(unittest.TestCase):
         self.h.preflight = Mock()
         self.h.physical_zone = 'eastus2-az1'
         self.h.wait = Mock(return_value=self.ready())
+        self.h.rest = Mock()
         expected = '/subscriptions/subscription/resourceGroups/cluster/providers/Microsoft.KeyVault/vaults/' + self.h.vault
         for resource_id, project, success in ((expected.upper(), 'project', True),
                                               (expected, 'other-project', False),
@@ -242,23 +287,24 @@ class HCPTests(unittest.TestCase):
         self.h.rest.assert_not_called()
         self.az.delete_group.assert_called_once_with('cluster', 'eastus2')
 
-    def test_generated_template_has_hcp_pool_and_no_classic_control_plane(self):
+    def test_generated_template_creates_only_the_hcp_control_plane_and_prerequisites(self):
         template = json.loads((ROOT / 'roles/host_ocp4_aro_install/templates/hcp.json').read_text())
         resources = template['resources']
         types = [r['type'] for r in resources]
         self.assertIn('Microsoft.RedHatOpenShift/hcpOpenShiftClusters', types)
-        self.assertIn('Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools', types)
+        self.assertNotIn('Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools', types)
+        cluster = next(r for r in resources if r['type'] == 'Microsoft.RedHatOpenShift/hcpOpenShiftClusters')
+        self.assertEqual(cluster['apiVersion'], hcp.API)
         self.assertNotIn('Microsoft.Compute/virtualMachines', types)
         vault = next(r for r in resources if r['type'] == 'Microsoft.KeyVault/vaults')
         # Key Vault rejects explicit false, including on first creation. Omitting
         # the setting also avoids disabling protection on an existing vault.
         self.assertNotIn('enablePurgeProtection', vault['properties'])
         self.assertEqual(vault['properties']['softDeleteRetentionInDays'], 7)
-        pool = next(r for r in resources if r['type'].endswith('/nodePools'))
-        self.assertEqual(pool['properties']['platform']['availabilityZone'], "[parameters('workerZone')]")
 
     def test_preflight_uses_worker_quota_floor_and_exact_versions(self):
-        self.h.rest = Mock(return_value={'value': [{'name': '4.21.22'}]})
+        enabled = {'name': '5.0.1', 'properties': {'channelGroup': 'stable', 'enabled': True}}
+        self.h.rest = Mock(return_value={'value': [enabled]})
         def cli(*args):
             if args[:2] == ('provider', 'show'):
                 return {'resourceTypes': [{'resourceType': 'HCPOpenShiftClusters', 'locations': ['East US 2']}]}
@@ -271,9 +317,12 @@ class HCPTests(unittest.TestCase):
         self.az.call.side_effect = cli
         self.h.preflight()
         self.assertEqual(self.h.physical_zone, 'eastus2-az2')
-        self.h.rest.return_value = {'value': [{'name': '4.21.220'}]}
-        with self.assertRaisesRegex(provider.AzureError, 'version is unavailable'):
-            self.h.preflight()
+        for item in (dict(enabled, name='5.0.10'),
+                     dict(enabled, properties={'channelGroup': 'stable', 'enabled': False}),
+                     dict(enabled, properties={'channelGroup': 'candidate', 'enabled': True})):
+            with self.subTest(item=item), self.assertRaisesRegex(provider.AzureError, 'version is unavailable'):
+                self.h.rest.return_value = {'value': [item]}
+                self.h.preflight()
 
     def test_region_discovery_accepts_new_hcp_regions_and_ignores_classic_locations(self):
         self.az.call.return_value = {'resourceTypes': [
@@ -314,6 +363,27 @@ class HCPTests(unittest.TestCase):
         with patch.object(hcp.urllib.request, 'build_opener', return_value=opener), patch.object(hcp.time, 'sleep'):
             result = self.h.rest('POST', self.h.url, {'certificateSigningRequest': 'csr'})
         self.assertEqual(result['kubeconfig'], 'private-config')
+
+    def test_pool_creation_follows_201_operation_until_azure_reports_failure(self):
+        self.az.call.return_value = {'accessToken': 'secret-token'}
+        initial, failed = Mock(), Mock()
+        initial.status = 201
+        operation = self.h.root + '/operation'
+        initial.headers = {'Azure-AsyncOperation': operation, 'Retry-After': '0'}
+        initial.read.return_value = b'{"properties": {"provisioningState": "Provisioning"}}'
+        failed.status = 200
+        failed.headers = {}
+        failed.read.return_value = b'{"status": "Failed", "error": {"code": "DeadlineExceeded"}}'
+        for response in (initial, failed):
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock(return_value=None)
+        opener = Mock()
+        opener.open.side_effect = [initial, failed]
+        with patch.object(hcp.urllib.request, 'build_opener', return_value=opener), patch.object(hcp.time, 'sleep'):
+            with self.assertRaisesRegex(provider.AzureError, 'DeadlineExceeded'):
+                self.h.rest('PUT', self.h.url + '/nodePools/workers', {})
+        poll_request = opener.open.call_args.args[0]
+        self.assertEqual((poll_request.get_method(), poll_request.full_url), ('GET', operation))
 
 
 if __name__ == '__main__':

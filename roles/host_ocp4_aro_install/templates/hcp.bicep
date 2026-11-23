@@ -17,14 +17,8 @@ param clusterName string
 @description('The cluster managed resource group name')
 param managedResourceGroupName string
 
-@description('The name of the node pool')
-param nodePoolName string
-
-@description('The OpenShift version for the cluster (X.Y format, e.g. 4.20)')
+@description('The OpenShift minor release for the control plane (e.g. 5.0)')
 param clusterVersion string
-
-@description('The OpenShift version for the node pool (X.Y.Z format, e.g. 4.20.8)')
-param nodePoolVersion string
 
 @description('Deploy ARO HCP with a private key vault')
 param privateKeyVault bool = false
@@ -47,10 +41,6 @@ param ingressType string = 'Public'
 @allowed(['None', 'FIPS'])
 param cryptoRestrictions string = 'None'
 param projectTag string
-param workerSize string
-param workerCount int
-param workerDisk int
-param workerZone string
 param podCidr string
 param serviceCidr string
 
@@ -683,7 +673,7 @@ resource serviceManagedIdentityRoleAssignmentNSG 'Microsoft.Authorization/roleAs
 
 
 // Cluster resource
-resource hcp 'Microsoft.RedHatOpenShift/hcpOpenShiftClusters@2026-09-01-preview' = {
+resource hcp 'Microsoft.RedHatOpenShift/hcpOpenShiftClusters@2026-10-01' = {
   name: clusterName
   location: resourceGroup().location
   tags: { agnosticd_project: projectTag }
@@ -800,29 +790,4 @@ resource hcp 'Microsoft.RedHatOpenShift/hcpOpenShiftClusters@2026-09-01-preview'
     serviceManagedIdentityReaderOnClusterApiAzureMi
     serviceManagedIdentityReaderOnKmsMi
   ]
-}
-
-// Node pool resource
-resource nodepool 'Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools@2026-09-01-preview' = {
-  parent: hcp
-  name: nodePoolName
-  location: resourceGroup().location
-  tags: { agnosticd_project: projectTag }
-  properties: {
-    version: {
-      id: nodePoolVersion
-      channelGroup: 'stable'
-    }
-    platform: {
-      subnetId: hcp.properties.platform.subnetId
-      availabilityZone: workerZone
-      vmSize: workerSize
-      osDisk: {
-        sizeGiB: workerDisk
-        diskStorageAccountType: 'StandardSSD_LRS'
-      }
-    }
-    replicas: workerCount
-    autoRepair: true
-  }
 }
