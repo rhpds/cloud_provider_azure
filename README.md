@@ -29,6 +29,7 @@ by those roles; the collection READMEs identify those dependencies.
 | [installer_platform](roles/installer_platform/README.md) | Render Azure YAML fragments for the shared IPI installer |
 | [host_ocp4_aro_install](roles/host_ocp4_aro_install/README.md) | Delegated bastion: provision/reconnect ARO and export access files |
 | [host_ocp4_aro_hcp_credentials](roles/host_ocp4_aro_hcp_credentials/README.md) | Bastion: issue/refresh temporary HCP administrative kubeconfig |
+| [host_ocp4_aro_hcp_external_auth](roles/host_ocp4_aro_hcp_external_auth/README.md) | Controller: register Keycloak as the HCP console identity provider |
 | [host_ocp4_aro_destroy](roles/host_ocp4_aro_destroy/README.md) | Controller: delete ARO before its owned network/identity group |
 | [lifecycle](roles/lifecycle/README.md) | Controller: start, stop or report status using a separate lifecycle action |
 | [template_destroy](roles/template_destroy/README.md) | Controller: remove owned bastion/DNS after cluster cleanup |
@@ -334,10 +335,11 @@ HCP has no built-in kubeadmin login/password. The
 [host_ocp4_aro_hcp_credentials role](roles/host_ocp4_aro_hcp_credentials/README.md)
 issues temporary admin access, exports the standard kubeconfig and records its
 expiry. Credentials expire after 24 hours; rerun that role on the bastion after
-initializing the original controller context to refresh all copies. Regular
-OIDC users, console authentication, private endpoints, multiple node pools and
-automated upgrades are outside this initial implementation. Never use the
-standard password-based info role for HCP.
+initializing the original controller context to refresh all copies. For browser
+sign-in, the core authentication workload can provision Keycloak and use
+`host_ocp4_aro_hcp_external_auth` to configure direct OIDC on the HCP cluster.
+Private endpoints, multiple node pools, and automated upgrades are outside
+this implementation.
 
 The v2 sample `openshift-cluster-aro-hcp-azure.yml` documents required sandbox
 inputs and quickstart sizing. Live HCP provisioning is not covered by the

@@ -1,0 +1,105 @@
+---
+
+- name: Configure Keycloak as the ARO HCP console identity provider
+  delegate_to: localhost
+  vars:
+    _aro_hcp_auth_console_url: "https://{{ _aro_hcp_auth_route.resources[0].spec.host }}"
+    _aro_hcp_auth_issuer: "{{ aro_hcp_external_auth_keycloak_url | regex_replace('/+$', '') }}/realms/{{ aro_hcp_external_auth_keycloak_realm }}"
+  module_defaults:
+    group/kubernetes.core.k8s:
+      kubeconfig: "{{ aro_hcp_external_auth_kubeconfig }}"
+  block:
+
+  - name: Require initialized Azure HCP settings
+    ansible.builtin.assert:
+      that:
+      - hostvars.localhost.azure_settings.hcp | default(false) | bool
+      fail_msg: Initialize the Azure provider with the original ARO HCP deployment variables before configuring external authentication.
+
+  - name: Discover the OpenShift console route
+    kubernetes.core.k8s_info:
+      api_version: route.openshift.io/v1
+      kind: Route
+      namespace: openshift-console
+      name: console
+    register: _aro_hcp_auth_route
+    retries: 30
+    delay: 10
+    until: _aro_hcp_auth_route.resources[0].spec.host | default('') | length > 0
+
+  - name: Wait for the Keycloak realm OIDC discovery endpoint
+    ansible.builtin.uri:
+      url: "{{ _aro_hcp_auth_issuer }}/.well-known/openid-configuration"
+      follow_redirects: none
+      return_content: true
+    register: _aro_hcp_auth_discovery
+    retries: 60
+    delay: 10
+    until: _aro_hcp_auth_discovery.json.issuer | default('') == _aro_hcp_auth_issuer
+
+  - name: Configure the confidential Keycloak client for the console callback
+    community.general.keycloak_client:
+      auth_keycloak_url: "{{ aro_hcp_external_auth_keycloak_url }}"
+      auth_realm: master
+      auth_client_id: admin-cli
+      auth_username: "{{ aro_hcp_external_auth_keycloak_admin_username }}"
+      auth_password: "{{ aro_hcp_external_auth_keycloak_admin_password }}"
+      realm: "{{ aro_hcp_external_auth_keycloak_realm }}"
+      client_id: "{{ aro_hcp_external_auth_client_id }}"
+      secret: "{{ aro_hcp_external_auth_client_secret }}"
+      protocol: openid-connect
+      client_authenticator_type: client-secret
+      public_client: false
+      enabled: true
+      standard_flow_enabled: true
+      implicit_flow_enabled: false
+      direct_access_grants_enabled: false
+      service_accounts_enabled: false
+      redirect_uris:
+      - "{{ _aro_hcp_auth_console_url }}/auth/callback"
+      state: present
+    no_log: true
+
+  - name: Register the Keycloak issuer with ARO HCP
+    agnosticd.cloud_provider_azure.azure_environment:
+      action: hcp_external_auth
+      auth: "{{ hostvars.localhost.azure_auth }}"
+      config_dir: "{{ hostvars.localhost.azure_cli_config_dir }}"
+      project: "{{ project_tag }}"
+      settings: >-
+        {{ hostvars.localhost.azure_settings | combine({
+           'hcp_auth_name': aro_hcp_external_auth_name,
+           'hcp_auth_issuer': _aro_hcp_auth_issuer,
+           'hcp_auth_client_id': aro_hcp_external_auth_client_id,
+           'hcp_auth_console_url': _aro_hcp_auth_console_url}) }}
+
+  - name: Configure the console OIDC client secret
+    kubernetes.core.k8s:
+      state: present
+      definition:
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: "{{ aro_hcp_external_auth_name }}-console-openshift-console"
+          namespace: openshift-config
+        type: Opaque
+        data:
+          clientSecret: "{{ aro_hcp_external_auth_client_secret | b64encode }}"
+    no_log: true
+
+  - name: Wait for the OpenShift console operator to become available
+    kubernetes.core.k8s_info:
+      api_version: config.openshift.io/v1
+      kind: ClusterOperator
+      name: console
+    register: _aro_hcp_auth_console_operator
+    retries: 60
+    delay: 10
+    until: >-
+      _aro_hcp_auth_console_operator.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Available') | selectattr('status', 'equalto', 'True') | list | length > 0
+
+  - name: Publish the OpenShift console URL for workloads
+    delegate_facts: true
+    ansible.builtin.set_fact:
+      openshift_console_url: "{{ _aro_hcp_auth_console_url }}"

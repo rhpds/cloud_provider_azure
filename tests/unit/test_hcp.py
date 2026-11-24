@@ -33,6 +33,51 @@ class HCPTests(unittest.TestCase):
         return {'tags': {'agnosticd_project': 'project'}, 'properties': {
             'provisioningState': 'Succeeded', 'version': {'id': '5.0'}, 'platform': {'subnetId': '/test/worker-subnet'}}}
 
+    def test_external_auth_registers_the_keycloak_console_client_idempotently(self):
+        console = 'https://console.example.test'
+        issuer = 'https://keycloak.example.test/realms/sso'
+        self.s.update(hcp_auth_name='keycloak', hcp_auth_issuer=issuer,
+                      hcp_auth_client_id='idp-4-ocp', hcp_auth_console_url=console)
+        cluster = self.ready()
+        cluster['properties']['console'] = {'url': console + '/'}
+        self.h.show = Mock(side_effect=[cluster, None])
+        self.h.rest = Mock()
+
+        self.h.configure_external_auth()
+
+        method, url, body = self.h.rest.call_args.args
+        self.assertEqual((method, url), ('PUT', self.h.url + '/externalAuths/keycloak?api-version=' + hcp.API))
+        self.assertEqual(body['properties'], {
+            'issuer': {'url': issuer, 'audiences': ['idp-4-ocp']},
+            'claim': {'mappings': {'username': {'claim': 'preferred_username', 'prefixPolicy': 'NoPrefix'}}},
+            'clients': [{'clientId': 'idp-4-ocp', 'type': 'Confidential', 'extraScopes': ['profile'],
+                         'component': {'name': 'console', 'authClientNamespace': 'openshift-console'}}],
+        })
+        self.assertTrue(self.az.changed)
+        self.az.changed = False
+        self.h.show.side_effect = [cluster, body]
+        self.h.rest.reset_mock()
+
+        self.h.configure_external_auth()
+
+        self.assertFalse(self.az.changed)
+        self.h.rest.assert_not_called()
+
+    def test_external_auth_checks_cluster_ownership_and_console_before_mutating(self):
+        self.s.update(hcp_auth_name='keycloak', hcp_auth_issuer='https://keycloak.example.test/realms/sso',
+                      hcp_auth_client_id='idp-4-ocp', hcp_auth_console_url='https://console.example.test')
+        cluster = self.ready()
+        cluster['properties']['console'] = {'url': 'https://other.example.test'}
+        self.h.show = Mock(side_effect=[None, cluster])
+        self.h.rest = Mock()
+
+        with self.assertRaisesRegex(provider.AzureError, 'missing or unowned'):
+            self.h.configure_external_auth()
+        with self.assertRaisesRegex(provider.AzureError, 'does not match'):
+            self.h.configure_external_auth()
+
+        self.h.rest.assert_not_called()
+
     def test_validate_rejects_identity_count_and_overlapping_networks(self):
         self.h.validate()
         for change in ({'identity_mode': 'service_principal'}, {'worker_count': 1},

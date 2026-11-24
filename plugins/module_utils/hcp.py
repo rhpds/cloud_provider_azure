@@ -6,6 +6,7 @@ import re
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -279,6 +280,50 @@ class HCP:
             raise AzureError('HCP credential operation did not return a kubeconfig and expiry')
         result['kubeconfig'] = result['kubeconfig'].replace('\\n', '\n')
         return result
+
+    def configure_external_auth(self):
+        name = self.s['hcp_auth_name']
+        issuer = self.s['hcp_auth_issuer']
+        client_id = self.s['hcp_auth_client_id']
+        console_url = self.s['hcp_auth_console_url']
+        if not re.fullmatch(r'[a-z]([-a-z0-9]{0,13}[a-z0-9])?', name or ''):
+            raise AzureError('Invalid HCP external authentication provider name')
+        url = urllib.parse.urlsplit(issuer or '')
+        if url.scheme != 'https' or not url.hostname or url.username or url.query or url.fragment:
+            raise AzureError('HCP external authentication requires an HTTPS issuer URL')
+        if not client_id:
+            raise AzureError('HCP external authentication requires a client ID')
+        cluster = self.show()
+        if not cluster or not owned(cluster, self.az.project):
+            raise AzureError('Refusing to configure authentication for a missing or unowned HCP cluster')
+        cluster_properties = cluster['properties']
+        if cluster_properties.get('provisioningState') != 'Succeeded':
+            raise AzureError('The ARO HCP cluster must be ready before configuring authentication')
+        if (cluster_properties.get('console', {}).get('url') or '').rstrip('/') != console_url:
+            raise AzureError('The console route in the kubeconfig does not match the owned ARO HCP cluster')
+
+        suffix = '/externalAuths/' + name
+        desired = {
+            'issuer': {'url': issuer, 'audiences': [client_id]},
+            'claim': {'mappings': {'username': {'claim': 'preferred_username', 'prefixPolicy': 'NoPrefix'}}},
+            'clients': [{
+                'clientId': client_id,
+                'component': {'name': 'console', 'authClientNamespace': 'openshift-console'},
+                'extraScopes': ['profile'],
+                'type': 'Confidential',
+            }],
+        }
+        current = self.show(suffix)
+        if current:
+            properties = current['properties']
+            if (properties.get('issuer', {}).get('url') != issuer
+                    or client_id not in properties.get('issuer', {}).get('audiences', [])):
+                raise AzureError('An HCP authentication provider with this name belongs to a different issuer or client')
+            if all(properties.get(key) == value for key, value in desired.items()):
+                return {}
+        self.rest('PUT', self.url + suffix + '?api-version=' + API, {'properties': desired})
+        self.az.changed = True
+        return {}
 
     def destroy(self):
         s = self.s
