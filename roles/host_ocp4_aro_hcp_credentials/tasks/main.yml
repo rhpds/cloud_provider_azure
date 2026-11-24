@@ -23,14 +23,16 @@
     community.crypto.openssl_privatekey:
       path: "{{ hcp_credentials_tmp.path }}/key.pem"
       type: RSA
-      size: 2048
+      size: 4096
       mode: u=rw,go=
 
   - name: Generate administrative certificate request
     community.crypto.openssl_csr:
       path: "{{ hcp_credentials_tmp.path }}/request.pem"
       privatekey_path: "{{ hcp_credentials_tmp.path }}/key.pem"
-      common_name: agnosticd-hcp-admin
+      common_name: "system:customer-break-glass:system-admin"
+      organization_name: "system:masters"
+      use_common_name_for_san: false
 
   - name: Read certificate request
     ansible.builtin.slurp:
