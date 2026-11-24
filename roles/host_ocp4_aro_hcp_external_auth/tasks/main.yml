@@ -57,6 +57,8 @@
       service_accounts_enabled: false
       redirect_uris:
       - "{{ _aro_hcp_auth_console_url }}/auth/callback"
+      valid_post_logout_redirect_uris:
+      - "{{ _aro_hcp_auth_console_url }}/"
       state: present
     no_log: true
 

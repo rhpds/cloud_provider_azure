@@ -16,8 +16,9 @@ cluster configuration.
 The role obtains the callback URL from the console route, waits for OIDC
 discovery, and reconciles the confidential Keycloak client through its Admin
 API. This also works when the realm already exists from an earlier run. The
-client uses the exact console `/auth/callback` redirect and has direct password
-grants and service accounts disabled. ARO validates Keycloak's issuer and client
+client allows the exact console `/auth/callback` sign-in redirect and the
+console root URL with a trailing slash after logout. Direct password grants
+and service accounts are disabled. ARO validates Keycloak's issuer and client
 audience and maps the `preferred_username` claim to the OpenShift user name.
 
 The role configures the Azure `externalAuths` resource and stores the client
