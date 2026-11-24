@@ -1,0 +1,68 @@
+---
+- name: Scale OCP workers on Azure IPI
+  module_defaults:
+    group/k8s:
+      host: "{{ openshift_api_url }}"
+      api_key: "{{ openshift_cluster_admin_token }}"
+      validate_certs: "{{ openshift_validate_certs }}"
+  block:
+  - name: Get cluster infrastructure
+    kubernetes.core.k8s_info:
+      api_version: config.openshift.io/v1
+      kind: Infrastructure
+      name: cluster
+    register: r_infrastructure
+
+  - name: Get all MachineSets
+    kubernetes.core.k8s_info:
+      api_version: machine.openshift.io/v1beta1
+      kind: MachineSet
+      namespace: openshift-machine-api
+    register: r_all_machinesets
+
+  - name: Set cluster and worker MachineSet facts
+    ansible.builtin.set_fact:
+      cluster_infrastructure_name: "{{ r_infrastructure.resources[0].status.infrastructureName }}"
+      existing_machinesets: >-
+        {%- set result = [] -%}
+        {%- for ms in r_all_machinesets.resources -%}
+          {%- set labels = ms.spec.template.metadata.labels | default({}) -%}
+          {%- if labels.get('machine.openshift.io/cluster-api-machine-role') == 'worker' -%}
+            {%- set _ = result.append(ms) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {{ result }}
+
+  - name: Get current worker nodes
+    kubernetes.core.k8s_info:
+      api_version: v1
+      kind: Node
+      label_selectors:
+      - node-role.kubernetes.io/worker
+      - "!node-role.kubernetes.io/control-plane"
+    register: r_current_workers
+
+  - name: Display current state
+    ansible.builtin.debug:
+      msg:
+      - "Cluster: {{ cluster_infrastructure_name }}"
+      - "Current workers: {{ r_current_workers.resources | length }}"
+      - "Desired workers: {{ worker_instance_count }}"
+      - "Requested VM size: {{ worker_instance_type | default('', true) or '(use existing)' }}"
+      - "Worker MachineSets: {{ existing_machinesets | map(attribute='metadata.name') | list }}"
+
+  - name: Create worker MachineSets from a control-plane Machine
+    when: existing_machinesets | length == 0
+    ansible.builtin.include_tasks: create_machinesets_from_control_plane.yml
+
+  - name: Select MachineSets to scale or copy
+    when: existing_machinesets | length > 0
+    ansible.builtin.include_tasks: select_machinesets.yml
+
+  - name: Wait for worker nodes to be Ready
+    when: worker_instance_count | int > 0
+    ansible.builtin.include_tasks: wait_for_nodes.yml
+
+  - name: Configure worker-only mode
+    when: worker_only | bool
+    ansible.builtin.include_tasks: configure_worker_only.yml

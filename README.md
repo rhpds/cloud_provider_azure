@@ -30,6 +30,7 @@ by those roles; the collection READMEs identify those dependencies.
 | [host_ocp4_aro_install](roles/host_ocp4_aro_install/README.md) | Delegated bastion: provision/reconnect ARO and export access files |
 | [host_ocp4_aro_hcp_credentials](roles/host_ocp4_aro_hcp_credentials/README.md) | Bastion: issue/refresh temporary HCP administrative kubeconfig |
 | [host_ocp4_aro_destroy](roles/host_ocp4_aro_destroy/README.md) | Controller: delete ARO before its owned network/identity group |
+| [scale_ocp_workers](roles/scale_ocp_workers/README.md) | Controller: scale or add worker MachineSets on a self-managed IPI cluster |
 | [lifecycle](roles/lifecycle/README.md) | Controller: start, stop or report status using a separate lifecycle action |
 | [template_destroy](roles/template_destroy/README.md) | Controller: remove owned bastion/DNS after cluster cleanup |
 

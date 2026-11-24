@@ -1,0 +1,88 @@
+---
+# Fallback for clusters without any worker MachineSet (for example an install
+# with several subnets and zero compute replicas). The providerSpec of a
+# control-plane Machine is converted into a worker providerSpec: worker user
+# data and no internal load balancer. publicLoadBalancer is kept because the
+# installer gives workers the same value for outbound connectivity.
+
+- name: Validate worker_instance_type is provided
+  when: worker_instance_type | length == 0
+  ansible.builtin.fail:
+    msg: "worker_instance_type is required when the cluster has no worker MachineSet"
+
+- name: Get control-plane Machines
+  kubernetes.core.k8s_info:
+    api_version: machine.openshift.io/v1beta1
+    kind: Machine
+    namespace: openshift-machine-api
+    label_selectors:
+    - machine.openshift.io/cluster-api-machine-role=master
+  register: r_control_plane_machines
+
+- name: Fail if there is no control-plane Machine
+  when: r_control_plane_machines.resources | length == 0
+  ansible.builtin.fail:
+    msg: "No control-plane Machine found to derive a worker providerSpec from"
+
+- name: Pick one control-plane Machine per zone
+  ansible.builtin.set_fact:
+    zone_machines: >-
+      {%- set seen = [] -%}
+      {%- set result = [] -%}
+      {%- for m in r_control_plane_machines.resources | sort(attribute='metadata.name') -%}
+        {%- set zone = m.spec.providerSpec.value.zone | default('', true) -%}
+        {%- if zone not in seen -%}
+          {%- set _ = seen.append(zone) -%}
+          {%- set _ = result.append(m) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ result }}
+
+- name: Calculate round-robin distribution
+  ansible.builtin.include_tasks: distribute_replicas.yml
+  vars:
+    distribution_slots: "{{ zone_machines | length }}"
+
+- name: Create worker MachineSets
+  kubernetes.core.k8s:
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    namespace: openshift-machine-api
+    name: "{{ _name }}"
+    state: present
+    definition: "{{ _machineset_def }}"
+  vars:
+    _spec: "{{ item.0.spec.providerSpec.value }}"
+    _name: "{{ cluster_infrastructure_name }}-worker-{{ _spec.location }}{{ _spec.zone | default('', true) }}"
+    _labels:
+      machine.openshift.io/cluster-api-cluster: "{{ cluster_infrastructure_name }}"
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+    _worker_spec: >-
+      {{ _spec
+         | dict2items
+         | rejectattr('key', 'in', ['internalLoadBalancer', 'userDataSecret', 'vmSize'])
+         | items2dict
+         | combine({'vmSize': worker_instance_type, 'userDataSecret': {'name': 'worker-user-data'}}) }}
+    _machineset_def:
+      apiVersion: machine.openshift.io/v1beta1
+      kind: MachineSet
+      metadata:
+        name: "{{ _name }}"
+        namespace: openshift-machine-api
+        labels: "{{ _labels }}"
+      spec:
+        replicas: "{{ item.1 | int }}"
+        selector:
+          matchLabels:
+            machine.openshift.io/cluster-api-cluster: "{{ cluster_infrastructure_name }}"
+            machine.openshift.io/cluster-api-machineset: "{{ _name }}"
+        template:
+          metadata:
+            labels: "{{ _labels | combine({'machine.openshift.io/cluster-api-machineset': _name}) }}"
+          spec:
+            providerSpec:
+              value: "{{ _worker_spec }}"
+  loop: "{{ zone_machines | zip(replica_distribution) | list }}"
+  loop_control:
+    label: "{{ item.0.metadata.name }} -> {{ item.1 }} replicas"
