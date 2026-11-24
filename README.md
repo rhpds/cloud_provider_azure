@@ -261,14 +261,16 @@ architecture. A provision run can replace archived cluster settings only after
 verifying that all deployment groups are absent. Keep the ownership archive and
 continue using the existing ARO install/destroy roles.
 
-HCP defaults to two Standard_D4s_v5 workers in one node pool/zone, public API and
+HCP defaults to two Standard_D4s_v5 workers in one availability set, public API and
 ingress, managed identities, OVN-Kubernetes, and a public owned encryption vault.
 `aro_version` must be an enabled stable OpenShift 5 patch for new provisioning.
 Its minor selects the control plane and the full patch selects the pool and
 client. Keep the original version when running lifecycle or destroy against
 an older preview deployment. See initialize/defaults for the pool,
-logical zone and integration CIDR options. Use an empty zone for availability
-set placement. New HCP worker pools use Premium SSD OS disks.
+logical zone and integration CIDR options. To request zonal placement, select
+a logical zone such as `'1'` from the worker SKU's advertised zones. An unset
+zone uses the archived value for lifecycle/destroy. New HCP worker pools use
+Premium SSD OS disks.
 Initialization queries Azure provider metadata for HCP-specific regions
 immediately after login, before reading ownership
 archives or querying sandbox resources. Unsupported regions fail with the supported

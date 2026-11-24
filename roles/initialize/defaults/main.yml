@@ -153,9 +153,11 @@ saved: "{{ undef(hint='Internal task-local decoded ownership record') }}"
 aro_deploy_hcp: false
 # aro_hcp_nodepool_name (string): single HCP worker pool name, 1–15 characters.
 aro_hcp_nodepool_name: workers
-# aro_hcp_availability_zone (string): logical zone, available for the worker SKU.
-# Use an empty string to let Azure place the pool in an availability set.
-aro_hcp_availability_zone: '1'
+# aro_hcp_availability_zone (string or null): logical zone such as '1', '2' or
+# '3', subject to worker SKU availability. Null or an empty string lets Azure
+# place a new pool in an availability set. With null on lifecycle/destroy,
+# use the zone recorded in the ownership archive.
+aro_hcp_availability_zone: null
 # aro_hcp_vnet_integration_subnet_cidr (IPv4 CIDR): dedicated delegated subnet,
 # at least /28, disjoint from aro_worker_subnet_cidr and inside aro_vnet_cidr.
 # No master subnet or control-plane VMs are created in HCP mode.

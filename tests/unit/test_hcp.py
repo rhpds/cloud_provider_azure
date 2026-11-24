@@ -37,7 +37,7 @@ class HCPTests(unittest.TestCase):
         self.h.validate()
         for change in ({'identity_mode': 'service_principal'}, {'worker_count': 1},
                        {'hcp_integration_cidr': '10.0.2.0/28'}, {'version': '5.0'}, {'cluster_name': 'bad_name'},
-                       {'hcp_nodepool': 'sixteenlettersss'}):
+                       {'hcp_nodepool': 'sixteenlettersss'}, {'hcp_zone': 'eastus2-az2'}):
             with self.subTest(change=change), self.assertRaises(provider.AzureError):
                 hcp.HCP(self.az, dict(self.s, **change)).validate()
         self.az.call.assert_not_called()
@@ -123,7 +123,6 @@ class HCPTests(unittest.TestCase):
     def test_new_deployment_passes_explicit_parameters_and_waits_for_pool(self):
         self.h.show = Mock(return_value=None)
         self.h.preflight = Mock()
-        self.h.physical_zone = 'eastus2-az2'
         operations = Mock()
         self.h.wait = operations.wait
         self.h.wait.return_value = self.ready()
@@ -154,7 +153,7 @@ class HCPTests(unittest.TestCase):
         self.assertEqual(body['properties']['version'], {'id': '5.0.1', 'channelGroup': 'stable'})
         self.assertEqual(body['properties']['replicas'], 2)
         self.assertEqual(body['properties']['platform']['subnetId'], '/test/worker-subnet')
-        self.assertEqual(body['properties']['platform']['availabilityZone'], 'eastus2-az2')
+        self.assertEqual(body['properties']['platform']['availabilityZone'], '1')
         self.assertTrue(self.az.changed)
 
     def test_missing_pool_resumes_without_redeploying_cluster_or_pinning_zone(self):
@@ -162,7 +161,7 @@ class HCPTests(unittest.TestCase):
         self.h.wait = Mock(return_value=self.ready())
         self.h.rest = Mock()
         self.h.preflight = Mock()
-        self.h.physical_zone = None
+        self.s['hcp_zone'] = ''
         self.h.install('/unused/template.json')
         self.az.call.assert_not_called()
         self.h.preflight.assert_called_once_with()
@@ -182,7 +181,6 @@ class HCPTests(unittest.TestCase):
     def test_matching_archive_recovers_only_its_owned_soft_deleted_vault(self):
         self.h.show = Mock(return_value=None)
         self.h.preflight = Mock()
-        self.h.physical_zone = 'eastus2-az1'
         self.h.wait = Mock(return_value=self.ready())
         self.h.rest = Mock()
         self.s['hcp_recover_vault'] = True
@@ -218,7 +216,6 @@ class HCPTests(unittest.TestCase):
     def test_existing_vault_uses_resource_id_and_project_ownership(self):
         self.h.show = Mock(return_value=None)
         self.h.preflight = Mock()
-        self.h.physical_zone = 'eastus2-az1'
         self.h.wait = Mock(return_value=self.ready())
         self.h.rest = Mock()
         expected = '/subscriptions/subscription/resourceGroups/cluster/providers/Microsoft.KeyVault/vaults/' + self.h.vault
@@ -311,12 +308,16 @@ class HCPTests(unittest.TestCase):
             if args[:2] == ('vm', 'list-skus'):
                 return [{'name': self.s['worker_size'], 'family': 'StandardDSv5Family', 'restrictions': [],
                          'locationInfo': [{'zones': ['1']}], 'capabilities': [{'name': 'vCPUs', 'value': '4'}]}]
-            if args[:2] == ('account', 'list-locations'):
-                return [{'name': 'eastus2', 'availabilityZoneMappings': [{'logicalZone': '1', 'physicalZone': 'eastus2-az2'}]}]
-            return [{'name': {'value': n}, 'limit': 20, 'currentValue': 0} for n in ('cores', 'standardDSv5Family')]
+            if args[:2] == ('vm', 'list-usage'):
+                return [{'name': {'value': n}, 'limit': 20, 'currentValue': 0} for n in ('cores', 'standardDSv5Family')]
+            raise AssertionError(args)
         self.az.call.side_effect = cli
         self.h.preflight()
-        self.assertEqual(self.h.physical_zone, 'eastus2-az2')
+        self.s['hcp_zone'] = '2'
+        with self.assertRaisesRegex(provider.AzureError, 'worker SKU or availability zone is unavailable'):
+            self.h.preflight()
+        self.s['hcp_zone'] = ''
+        self.h.preflight()
         for item in (dict(enabled, name='5.0.10'),
                      dict(enabled, properties={'channelGroup': 'stable', 'enabled': False}),
                      dict(enabled, properties={'channelGroup': 'candidate', 'enabled': True})):

@@ -258,6 +258,18 @@ def main():
         # Reuse a completed deployment's archive across HCP/classic modes only
         # after every archived deployment group is absent. Failures preserve it.
         hcp_saved = json.loads(hcp_archive.read_text())
+        old_zone_archive = dict(hcp_saved, settings=dict(hcp_saved['settings'], hcp_zone='1'))
+        for action in ('status', 'destroy'):
+            hcp_archive.write_text(json.dumps(old_zone_archive))
+            variables_file = root / ('hcp-archived-zone-' + action + '.json')
+            variables_file.write_text(json.dumps(dict(hcp_vars, ACTION=action, expected_hcp_zone='1')))
+            run = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook',
+                                  str(collection / 'tests/integration/initialize.yml'), '-e', '@' + str(variables_file)],
+                                 cwd=collection, env=env, text=True, capture_output=True, check=False)
+            if run.returncode or json.loads(hcp_archive.read_text())['settings']['hcp_zone'] != '1':
+                print(run.stdout + run.stderr)
+                return 1
+            print('PASS: HCP ' + action + ' keeps legacy archived zone when unset')
         classic_saved = json.loads(json.dumps(hcp_saved))
         classic_saved['settings'] = {key: value for key, value in classic_saved['settings'].items()
                                      if not key.startswith('hcp_')}

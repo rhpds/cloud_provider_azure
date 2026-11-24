@@ -107,6 +107,8 @@ class HCP:
             raise AzureError('Invalid HCP cluster name')
         if not re.fullmatch(r'[a-zA-Z]([-a-zA-Z0-9]{0,13}[a-zA-Z0-9])?', s['hcp_nodepool']):
             raise AzureError('Invalid HCP node pool name')
+        if s.get('hcp_zone') and not re.fullmatch(r'[1-9][0-9]*', s['hcp_zone']):
+            raise AzureError('Set aro_hcp_availability_zone to a logical zone such as 1, 2 or 3, or leave it empty')
         if not re.fullmatch(r'\d+\.\d+\.\d+', s['version']) or s['worker_count'] < 2:
             raise AzureError('HCP requires an exact release and at least two workers')
         networks = {k: ipaddress.ip_network(s[k]) for k in
@@ -146,13 +148,6 @@ class HCP:
                              {'kind': 'sku', 'setting': s['worker_size'],
                               'reasons': ['SKU or logical availability zone ' + zone + ' is unavailable'
                                           if zone else 'SKU is unavailable']})
-        self.physical_zone = None
-        if zone:
-            locations = self.az.call('account', 'list-locations')
-            mapping = next((loc.get('availabilityZoneMappings', []) for loc in locations if loc['name'] == s['region']), [])
-            self.physical_zone = next((item['physicalZone'] for item in mapping if item['logicalZone'] == zone), None)
-            if not self.physical_zone:
-                raise AzureError('Could not resolve HCP logical zone to its physical availability zone')
         cores = int(next(x['value'] for x in sku['capabilities'] if x['name'] == 'vCPUs'))
         required = max(20, cores * (s['worker_count'] + 1))
         usage = self.az.call('vm', 'list-usage', '--location', s['region'])
@@ -255,8 +250,8 @@ class HCP:
                 self.preflight()
             platform = dict(subnetId=subnet, vmSize=s['worker_size'],
                             osDisk={'sizeGiB': s['worker_disk'], 'diskStorageAccountType': 'Premium_LRS'})
-            if self.physical_zone:
-                platform['availabilityZone'] = self.physical_zone
+            if s['hcp_zone']:
+                platform['availabilityZone'] = s['hcp_zone']
             body = dict(location=s['region'], tags={'agnosticd_project': self.az.project},
                         properties=dict(version={'id': s['version'], 'channelGroup': 'stable'},
                                         platform=platform, replicas=s['worker_count'], autoRepair=True))
