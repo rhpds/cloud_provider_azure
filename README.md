@@ -116,10 +116,13 @@ Or:
 host_ocp4_deploy_installation_method: aro
 aro_version: <exact version from az aro get-versions --location eastus>
 aro_identity_mode: managed_identity  # alternatively service_principal
+ocp4_pull_secret: <Red Hat pull secret>
 ```
 
-ARO uses public API/ingress and Azure-managed endpoint DNS. Its pull secret is
-optional. Defaults are three workers, D8s_v5 control plane, D4s_v5 workers and
+ARO uses public API/ingress and Azure-managed endpoint DNS. Supply the Red Hat
+pull secret in protected deployment variables. Classic ARO passes it during
+cluster creation, and HCP applies it after obtaining administrative access.
+Classic ARO defaults are three workers, D8s_v5 control plane, D4s_v5 workers and
 128 GiB worker disks. Override `aro_master_vm_size`, `aro_worker_vm_size`,
 `aro_worker_count`, `aro_worker_disk_size`, `aro_vnet_cidr`,
 `aro_master_subnet_cidr`, `aro_worker_subnet_cidr`, `aro_pod_cidr`, and

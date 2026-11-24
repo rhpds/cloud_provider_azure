@@ -1,6 +1,8 @@
 ---
 
 - name: Install and configure ARO
+  vars:
+    _aro_registry_config: "{{ ocp4_pull_secret if ocp4_pull_secret is mapping else ocp4_pull_secret | from_json }}"
   block:
 
   - name: Validate ARO input
@@ -8,6 +10,23 @@
       that:
       - hostvars.localhost.azure_settings.version | length > 0
       - hostvars.localhost.azure_settings.worker_count | int >= (2 if hostvars.localhost.azure_settings.hcp | default(false) else 3)
+
+  - name: Validate ARO registry credentials
+    block:
+
+    - name: Check protected Docker configuration
+      ansible.builtin.assert:
+        that:
+        - _aro_registry_config is mapping
+        - _aro_registry_config.auths is mapping
+        - _aro_registry_config.auths | length > 0
+      no_log: true
+
+    rescue:
+
+    - name: Report invalid ARO pull secret
+      ansible.builtin.fail:
+        msg: Supply ocp4_pull_secret as Docker config JSON or a mapping with a nonempty auths object.
 
   - name: Install Azure CLI on bastion
     ansible.builtin.include_role:
@@ -23,7 +42,10 @@
              if hostvars.localhost.azure_settings.hcp | default(false) else {} }}
         action: aro_install
         auth: "{{ hostvars.localhost.azure_auth }}"
-        settings: "{{ hostvars.localhost.azure_settings | combine({'pull_secret': ocp4_pull_secret | default('')}) }}"
+        settings: >-
+          {{ hostvars.localhost.azure_settings | combine(
+             {} if hostvars.localhost.azure_settings.hcp | default(false)
+             else {'pull_secret': ocp4_pull_secret | default('')}) }}
         config_dir: "/home/{{ ansible_user }}/.azure-agnosticd"
         project: "{{ project_tag }}"
       register: azure_aro_result
@@ -63,6 +85,10 @@
     when: hostvars.localhost.azure_settings.hcp | default(false)
     ansible.builtin.include_role:
       name: agnosticd.cloud_provider_azure.host_ocp4_aro_hcp_credentials
+
+  - name: Configure HCP registry credentials before workloads
+    when: hostvars.localhost.azure_settings.hcp | default(false)
+    ansible.builtin.include_tasks: hcp_pull_secret.yml
 
   - name: Configure classic ARO access
     when: not (hostvars.localhost.azure_settings.hcp | default(false))
