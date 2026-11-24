@@ -10,7 +10,8 @@ administrative kubeconfig. The sandbox identity needs permission to write
 `Microsoft.RedHatOpenShift/hcpOpenShiftClusters/externalAuths` on the cluster.
 The Keycloak route must be reachable over trusted HTTPS by the controller,
 the OpenShift console and hosted API server, and users' browsers. The controller
-uses `community.general` and `kubernetes.core` from the execution environment.
+uses `middleware_automation.keycloak` and `kubernetes.core` for client and
+cluster configuration.
 
 The role obtains the callback URL from the console route, waits for OIDC
 discovery, and reconciles the confidential Keycloak client through its Admin
