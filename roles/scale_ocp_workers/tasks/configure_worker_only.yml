@@ -62,7 +62,9 @@
         force: true
     loop: "{{ control_plane_worker_nodes }}"
     register: r_drain
-    # Ignore errors (for example an apiserver PDB violation)
+    # A drain stops at pods protected by a PodDisruptionBudget, such as the
+    # kube-apiserver guard pods. That is expected on control-plane nodes, so
+    # the error is ignored and reported in the summary below.
     ignore_errors: true
 
   - name: Uncordon control-plane node
@@ -77,4 +79,14 @@
     - "Worker-only mode configured"
     - "Control-plane nodes with worker label removed: {{ control_plane_worker_nodes }}"
     - "mastersSchedulable: false"
-    - "Control-plane nodes drained: {{ worker_drain_control_plane | bool }}"
+    - >-
+      Control-plane nodes fully drained:
+      {{ r_drain.results | default([]) | map(attribute='item') | list
+         | difference(r_drain.results | default([]) | selectattr('failed', 'defined')
+           | selectattr('failed') | map(attribute='item') | list)
+         if worker_drain_control_plane | bool else 'drain skipped' }}
+    - >-
+      Control-plane nodes partly drained (pods kept by a disruption budget):
+      {{ r_drain.results | default([]) | selectattr('failed', 'defined')
+         | selectattr('failed') | map(attribute='item') | list
+         if worker_drain_control_plane | bool else 'drain skipped' }}
