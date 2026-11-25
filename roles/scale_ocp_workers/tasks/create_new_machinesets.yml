@@ -1,0 +1,73 @@
+---
+# Create MachineSets with a different VM size by copying existing worker
+# MachineSets (one per zone) and changing only name, vmSize and replicas. The
+# image, subnet, resource group and managed identity stay as the installer set
+# them. MachineSets created by an earlier run (same suffix) are not used as
+# sources.
+
+- name: Validate worker_machineset_suffix is provided
+  when: worker_machineset_suffix | length == 0
+  ansible.builtin.fail:
+    msg: "worker_machineset_suffix is required when creating MachineSets with a different VM size"
+
+- name: Select source MachineSets
+  ansible.builtin.set_fact:
+    source_machinesets: >-
+      {{ existing_machinesets
+         | rejectattr('metadata.name', 'match', '.*-' ~ worker_machineset_suffix ~ '$')
+         | list }}
+
+- name: Fail if there is no source MachineSet
+  when: source_machinesets | length == 0
+  ansible.builtin.fail:
+    msg: "No worker MachineSet without the suffix '{{ worker_machineset_suffix }}' to copy"
+
+- name: Calculate round-robin distribution
+  ansible.builtin.include_tasks: distribute_replicas.yml
+  vars:
+    distribution_slots: "{{ source_machinesets | length }}"
+
+- name: Display new MachineSet plan
+  ansible.builtin.debug:
+    msg: >-
+      Creating {{ item.0.metadata.name }}-{{ worker_machineset_suffix }}
+      with {{ item.1 }} replicas ({{ worker_instance_type }})
+  loop: "{{ source_machinesets | zip(replica_distribution) | list }}"
+  loop_control:
+    label: "{{ item.0.metadata.name }}"
+
+- name: Create new MachineSets
+  kubernetes.core.k8s:
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    namespace: openshift-machine-api
+    name: "{{ _new_name }}"
+    state: present
+    definition: "{{ _machineset_def }}"
+  vars:
+    _new_name: "{{ item.0.metadata.name }}-{{ worker_machineset_suffix }}"
+    _template: "{{ item.0.spec.template }}"
+    _machineset_def:
+      apiVersion: machine.openshift.io/v1beta1
+      kind: MachineSet
+      metadata:
+        name: "{{ _new_name }}"
+        namespace: openshift-machine-api
+        labels: "{{ item.0.metadata.labels | default({}) }}"
+      spec:
+        replicas: "{{ item.1 | int }}"
+        selector:
+          matchLabels: >-
+            {{ item.0.spec.selector.matchLabels
+               | combine({'machine.openshift.io/cluster-api-machineset': _new_name}) }}
+        template:
+          metadata:
+            labels: >-
+              {{ _template.metadata.labels
+                 | combine({'machine.openshift.io/cluster-api-machineset': _new_name}) }}
+          spec: >-
+            {{ _template.spec
+               | combine({'providerSpec': {'value': {'vmSize': worker_instance_type}}}, recursive=true) }}
+  loop: "{{ source_machinesets | zip(replica_distribution) | list }}"
+  loop_control:
+    label: "{{ item.0.metadata.name }}-{{ worker_machineset_suffix }}"

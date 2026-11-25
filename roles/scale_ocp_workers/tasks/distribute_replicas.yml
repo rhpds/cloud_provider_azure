@@ -1,0 +1,14 @@
+---
+# Round-robin distribution of worker_instance_count over distribution_slots
+# MachineSets, for example 5 workers over 3 zones = [2, 2, 1].
+
+- name: Build replica distribution list
+  ansible.builtin.set_fact:
+    replica_distribution: >-
+      {%- set total = worker_instance_count | int -%}
+      {%- set count = distribution_slots | int -%}
+      {%- set result = [] -%}
+      {%- for i in range(count) -%}
+        {%- set _ = result.append(total // count + (1 if i < total % count else 0)) -%}
+      {%- endfor -%}
+      {{ result }}

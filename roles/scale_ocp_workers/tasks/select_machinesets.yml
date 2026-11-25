@@ -1,0 +1,22 @@
+---
+# Decide whether to scale existing worker MachineSets or copy them for a new
+# VM size. A MachineSet matches when its vmSize equals worker_instance_type.
+
+- name: Find MachineSets that already use the requested VM size
+  ansible.builtin.set_fact:
+    matching_machinesets: >-
+      {{ existing_machinesets
+         | selectattr('spec.template.spec.providerSpec.value.vmSize', 'equalto', worker_instance_type)
+         | list }}
+
+- name: Scale MachineSets of the existing VM size
+  when: (worker_instance_type | length == 0) or (matching_machinesets | length > 0)
+  ansible.builtin.include_tasks: scale_existing_machinesets.yml
+  vars:
+    target_machinesets: "{{ existing_machinesets if worker_instance_type | length == 0 else matching_machinesets }}"
+
+- name: Create new MachineSets with a different VM size
+  when:
+  - worker_instance_type | length > 0
+  - matching_machinesets | length == 0
+  ansible.builtin.include_tasks: create_new_machinesets.yml
