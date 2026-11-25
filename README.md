@@ -120,9 +120,10 @@ aro_identity_mode: managed_identity  # alternatively service_principal
 ocp4_pull_secret: <Red Hat pull secret>
 ```
 
-ARO uses public API/ingress and Azure-managed endpoint DNS. Supply the Red Hat
-pull secret in protected deployment variables. Classic ARO passes it during
-cluster creation, and HCP applies it after obtaining administrative access.
+ARO uses public API/ingress and Azure-managed endpoint DNS. Classic ARO passes
+an optional Red Hat pull secret during cluster creation. HCP requires the pull
+secret and applies it after obtaining administrative access. Supply it through
+protected deployment variables.
 Classic ARO defaults are three workers, D8s_v5 control plane, D4s_v5 workers and
 128 GiB worker disks. Override `aro_master_vm_size`, `aro_worker_vm_size`,
 `aro_worker_count`, `aro_worker_disk_size`, `aro_vnet_cidr`,
@@ -273,8 +274,10 @@ client. Keep the original version when running lifecycle or destroy against
 an older preview deployment. See initialize/defaults for the pool,
 logical zone and integration CIDR options. To request zonal placement, select
 a logical zone such as `'1'` from the worker SKU's advertised zones. An unset
-zone uses the archived value for lifecycle/destroy. New HCP worker pools use
-Premium SSD OS disks.
+zone uses the archived HCP zone on a retry, lifecycle operation, or destroy.
+Use an empty string to request an availability set explicitly. A placement
+change requires the prior deployment resource groups to be absent. New HCP
+worker pools use Premium SSD OS disks.
 Initialization queries Azure provider metadata for HCP-specific regions
 immediately after login, before reading ownership
 archives or querying sandbox resources. Unsupported regions fail with the supported

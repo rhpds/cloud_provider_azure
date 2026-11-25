@@ -117,17 +117,16 @@
     src: "{{ output_dir }}/{{ config }}_{{ guid }}_azure_ownership.json"
   register: azure_ownership_slurp
 
-- name: Restore the archived HCP zone for lifecycle and destroy when unset
+- name: Restore the archived HCP zone when unset
   when:
   - azure_ownership_stat.stat.exists
   - aro_deploy_hcp | bool
   - aro_hcp_availability_zone is none
-  - ACTION | default('provision') != 'provision'
   - saved.settings.hcp | default(false) | bool
   vars:
     saved: "{{ azure_ownership_slurp.content | b64decode | from_json }}"
   ansible.builtin.set_fact:
-    azure_settings: "{{ azure_settings | combine({'hcp_zone': saved.settings.hcp_zone}) }}"
+    azure_settings: "{{ azure_settings | combine({'hcp_zone': saved.settings.hcp_zone | default('')}) }}"
 
 - name: Validate archived ownership
   when: azure_ownership_stat.stat.exists

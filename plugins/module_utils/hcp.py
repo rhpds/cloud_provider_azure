@@ -49,7 +49,7 @@ class HCP:
         if settings.get('hcp_vault_name') and settings['hcp_vault_name'] != self.vault:
             raise AzureError('HCP vault identity differs from deterministic ownership')
 
-    def rest(self, method, url, body=None, missing=False):
+    def rest(self, method, url, body=None, missing=False, result_fields=()):
         """Retain response headers for ARM asynchronous operations; never log tokens."""
         if not url.startswith('https://management.azure.com/'):
             raise AzureError('Refusing an ARM operation URL outside management.azure.com')
@@ -84,8 +84,12 @@ class HCP:
             result_url = headers.get('Location') or result_url
             # Node pool creation returns 201 with an Azure-AsyncOperation URL.
             if status != 202 and not (status == 201 and operation) and state not in ('InProgress', 'Running', 'Accepted'):
-                if state == 'Succeeded' and result_url and result_url != url:
+                # A credential action can return a status-only or empty reply.
+                # Use the result URL from Location to retrieve the actual payload.
+                incomplete = any(not result.get(field) for field in result_fields)
+                if result_url and result_url != url and (state == 'Succeeded' or incomplete):
                     url, method, body = result_url, 'GET', None
+                    result_url = None
                     continue
                 return result
             if time.monotonic() >= deadline:
@@ -274,12 +278,18 @@ class HCP:
             raise AzureError('Cannot request HCP credentials before the cluster exists')
         if not owned(cluster, self.az.project):
             raise AzureError('Refusing credentials for an unowned HCP cluster')
-        result = self.rest('POST', self.url + '/requestAdminCredential?api-version=' + API,
-                           {'certificateSigningRequest': csr})
-        if not result.get('kubeconfig') or not result.get('expirationTimestamp'):
-            raise AzureError('HCP credential operation did not return a kubeconfig and expiry')
-        result['kubeconfig'] = result['kubeconfig'].replace('\\n', '\n')
-        return result
+        url = self.url + '/requestAdminCredential?api-version=' + API
+        fields = ('kubeconfig', 'expirationTimestamp')
+        for attempt in range(3):
+            result = self.rest('POST', url, {'certificateSigningRequest': csr}, result_fields=fields)
+            missing = [field for field in fields if not isinstance(result.get(field), str) or not result[field].strip()]
+            if not missing:
+                result['kubeconfig'] = result['kubeconfig'].replace('\\n', '\n')
+                return result
+            if attempt < 2:
+                time.sleep(15)
+        raise AzureError('HCP credential operation returned an incomplete result after 3 attempts. '
+                         'Missing or invalid fields include ' + ', '.join(missing) + '.')
 
     def configure_external_auth(self):
         name = self.s['hcp_auth_name']

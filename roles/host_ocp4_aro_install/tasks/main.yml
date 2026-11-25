@@ -12,6 +12,7 @@
       - hostvars.localhost.azure_settings.worker_count | int >= (2 if hostvars.localhost.azure_settings.hcp | default(false) else 3)
 
   - name: Validate ARO registry credentials
+    when: hostvars.localhost.azure_settings.hcp | default(false) | bool or ocp4_pull_secret | default('', true) | length > 0
     block:
 
     - name: Check protected Docker configuration

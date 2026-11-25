@@ -410,6 +410,63 @@ class HCPTests(unittest.TestCase):
             result = self.h.rest('POST', self.h.url, {'certificateSigningRequest': 'csr'})
         self.assertEqual(result['kubeconfig'], 'private-config')
 
+    def test_credential_request_uses_location_when_status_response_has_no_payload(self):
+        self.az.call.return_value = {'accessToken': 'secret-token'}
+        self.h.show = Mock(return_value=self.ready())
+        status_url = self.h.root + '/operations/credential'
+        result_url = self.h.root + '/operationResults/credential'
+        credential = {'kubeconfig': 'apiVersion: v1\\nkind: Config', 'expirationTimestamp': '2026-11-26T10:00:00Z'}
+        responses = [
+            (202, {}, {'Azure-AsyncOperation': status_url, 'Location': result_url, 'Retry-After': '0'}),
+            (200, {}, {}),
+            (200, credential, {}),
+        ]
+        opener = Mock()
+        mocked_responses = []
+        for status, result, headers in responses:
+            response = Mock(status=status, headers=headers)
+            response.read.return_value = json.dumps(result).encode()
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock()
+            mocked_responses.append(response)
+        opener.open.side_effect = mocked_responses
+
+        with patch.object(hcp.urllib.request, 'build_opener', return_value=opener), patch.object(hcp.time, 'sleep'):
+            result = self.h.credentials('csr')
+
+        self.assertEqual(result, dict(credential, kubeconfig='apiVersion: v1\nkind: Config'))
+        requests = [call.args[0] for call in opener.open.call_args_list]
+        self.assertEqual([request.full_url for request in requests[1:]], [status_url, result_url])
+        self.assertEqual([request.get_method() for request in requests], ['POST', 'GET', 'GET'])
+
+    def test_credentials_retry_incomplete_results_and_reuse_the_csr(self):
+        self.h.show = Mock(return_value=self.ready())
+        expected = {'kubeconfig': 'private-config', 'expirationTimestamp': '2026-11-26T10:00:00Z'}
+        self.h.rest = Mock(side_effect=[{}, {'kubeconfig': 'partial'}, expected])
+        with patch.object(hcp.time, 'sleep') as sleep:
+            self.assertEqual(self.h.credentials('csr'), expected)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(self.h.rest.call_count, 3)
+        self.assertTrue(all(call.args[2] == {'certificateSigningRequest': 'csr'}
+                            for call in self.h.rest.call_args_list))
+
+    def test_credentials_report_incomplete_output_without_exposing_the_payload(self):
+        self.h.show = Mock(return_value=self.ready())
+        self.h.rest = Mock(return_value={'kubeconfig': 'partial-sensitive-value'})
+        with patch.object(hcp.time, 'sleep'), self.assertRaises(provider.AzureError) as error:
+            self.h.credentials('csr')
+        self.assertIn('after 3 attempts. Missing or invalid fields include expirationTimestamp.', str(error.exception))
+        self.assertNotIn('partial-sensitive-value', str(error.exception))
+        self.assertEqual(self.h.rest.call_count, 3)
+
+    def test_credentials_do_not_resubmit_after_an_explicit_azure_error(self):
+        self.h.show = Mock(return_value=self.ready())
+        self.h.rest = Mock(side_effect=provider.AzureError('HCP ARM request failed with HTTP 400'))
+        with patch.object(hcp.time, 'sleep') as sleep, self.assertRaisesRegex(provider.AzureError, 'HTTP 400'):
+            self.h.credentials('csr')
+        self.h.rest.assert_called_once()
+        sleep.assert_not_called()
+
     def test_pool_creation_follows_201_operation_until_azure_reports_failure(self):
         self.az.call.return_value = {'accessToken': 'secret-token'}
         initial, failed = Mock(), Mock()

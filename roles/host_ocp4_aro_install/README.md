@@ -25,10 +25,11 @@ the `aro_*` inputs of [initialize](../initialize/defaults/main.yml). Its normali
 
 The principal in `azure_auth` always authenticates provisioning. `aro_identity_mode`
 chooses the cluster identity (`managed_identity` or `service_principal`), not the
-authentication method for this Ansible run. Supply `ocp4_pull_secret` through
+authentication method for this Ansible run. Pass `ocp4_pull_secret` through
 protected deployment variables as Docker config JSON or a mapping with an
-`auths` object containing valid `registry.redhat.io` credentials. Classic ARO
-passes it to `az aro create --pull-secret` when creating the cluster.
+`auths` object containing valid `registry.redhat.io` credentials. It is required
+for HCP and optional for classic ARO. Classic ARO passes a supplied secret to
+`az aro create --pull-secret` when creating the cluster.
 
 `ansible_user` identifies the bastion login account. `cluster_name` names the
 local authentication directory `/home/<ansible_user>/<cluster_name>/auth`; the

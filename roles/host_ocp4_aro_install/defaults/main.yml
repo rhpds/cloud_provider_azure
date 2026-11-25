@@ -24,10 +24,11 @@ guid: "{{ undef(hint='Supply the deployment guid') }}"
 # HCP exports kubeconfig and <config>_<guid>_hcp_credentials.json expiry instead;
 # it has no kubeadmin password. Its access role refreshes every kubeconfig copy.
 output_dir: "{{ undef(hint='Supply the controller output_dir') }}"
-# ocp4_pull_secret (secret JSON string or mapping): required Docker config with
-# an auths object containing Red Hat registry credentials. Classic ARO passes
-# it at creation through a private temporary file. HCP merges it into the
-# additional-pull-secret after administrative access is ready.
+# ocp4_pull_secret (secret JSON string or mapping): Docker config with an auths
+# object containing Red Hat registry credentials. Optional for classic ARO,
+# which passes it at creation through a private temporary file when supplied.
+# Required for HCP, which merges it into the additional-pull-secret after
+# administrative access is ready.
 ocp4_pull_secret: ""
 # azure_cli_version (string): version passed to the included install_cli role;
 # match the controller execution environment and repository availability.

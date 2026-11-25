@@ -259,7 +259,7 @@ def main():
         # after every archived deployment group is absent. Failures preserve it.
         hcp_saved = json.loads(hcp_archive.read_text())
         old_zone_archive = dict(hcp_saved, settings=dict(hcp_saved['settings'], hcp_zone='1'))
-        for action in ('status', 'destroy'):
+        for action in ('provision', 'status', 'destroy'):
             hcp_archive.write_text(json.dumps(old_zone_archive))
             variables_file = root / ('hcp-archived-zone-' + action + '.json')
             variables_file.write_text(json.dumps(dict(hcp_vars, ACTION=action, expected_hcp_zone='1')))
