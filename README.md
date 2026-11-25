@@ -250,12 +250,10 @@ References: [Microsoft ARO creation](https://learn.microsoft.com/en-us/azure/ope
 
 ### Live validation status
 
-Self-managed Azure IPI and standard ARO have completed live provisioning tests.
-The earlier preview test created a ready control plane in `westeurope` but
-worker provisioning failed with Azure `DeadlineExceeded`. This collection now
-follows the [Red Hat HCP quickstart](https://cloud.redhat.com/experts/aro/quickstart-hcp/)
-sequence on OpenShift 5. The updated flow has been checked offline and still
-needs a live provisioning test.
+Self-managed Azure IPI, standard ARO, and OpenShift 5 HCP have completed live
+provisioning tests. The HCP deployment follows the
+[Red Hat HCP quickstart](https://cloud.redhat.com/experts/aro/quickstart-hcp/)
+sequence and creates the worker pool after the control plane is ready.
 
 ### Configuration and lifecycle
 
@@ -344,6 +342,6 @@ sign-in, the core authentication workload can provision Keycloak and use
 Private endpoints, multiple node pools, and automated upgrades are outside
 this implementation.
 
-The v2 sample `openshift-cluster-aro-hcp-azure.yml` documents required sandbox
-inputs and quickstart sizing. Live HCP provisioning is not covered by the
-offline test suite.
+The [v2 HCP sample](https://github.com/rhpds/agnosticd-v2/blob/main/ansible/configs/openshift-cluster/sample_vars/openshift-cluster-aro-hcp-azure.yml)
+documents the sandbox inputs, required pull secret, tested West Europe worker
+sizing, and Keycloak console setup. The collection test suite runs offline.
