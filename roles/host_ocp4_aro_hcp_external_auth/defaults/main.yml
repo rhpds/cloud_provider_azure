@@ -25,11 +25,5 @@ aro_hcp_external_auth_keycloak_admin_password: "{{ undef(hint='Supply the Keyclo
 aro_hcp_external_auth_client_id: "{{ undef(hint='Supply the Keycloak console client ID') }}"
 aro_hcp_external_auth_client_secret: "{{ undef(hint='Supply the Keycloak console client secret') }}"
 
-# Internal discovery and readiness results. They are not configuration inputs.
-_aro_hcp_auth_route: {}
-_aro_hcp_auth_console_url: "{{ undef(hint='Generated from the OpenShift console route') }}"
-_aro_hcp_auth_issuer: "{{ undef(hint='Generated from the Keycloak URL and realm') }}"
-_aro_hcp_auth_discovery: {}
-_aro_hcp_auth_console_operator: {}
 # Controller fact published after the console operator is available.
 openshift_console_url: "{{ undef(hint='Generated from the healthy OpenShift console route') }}"

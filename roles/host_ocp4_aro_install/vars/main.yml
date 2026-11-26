@@ -1,0 +1,16 @@
+---
+# _aro_registry_config (secret mapping): normalized Docker config for ARO.
+_aro_registry_config: "{{ undef(hint='Internal protected ARO registry credentials') }}"
+# _aro_hcp_pull_secret (secret mapping): Kubernetes query for the HCP additional secret.
+_aro_hcp_pull_secret: "{{ undef(hint='Internal protected HCP pull secret query result') }}"
+# Current additional Secret and decoded Docker config, scoped to the update task.
+_aro_hcp_pull_secret_current: "{{ undef(hint='Internal protected HCP additional pull secret') }}"
+_aro_hcp_registry_config_current: "{{ undef(hint='Internal protected HCP Docker config') }}"
+
+# _diagnostic (mapping): task-local public SKU/quota diagnostic from a failed run.
+_diagnostic: "{{ undef(hint='Internal task-local non-secret failure diagnostic') }}"
+# _settings (mapping): task-local reference to localhost's normalized settings.
+_settings: "{{ undef(hint='Internal task-local normalized ARO settings') }}"
+# _login_error (secret string): task-local lowercase stderr from a failed login.
+# Used only to classify failures into public messages; never printed verbatim.
+_login_error: "{{ undef(hint='Internal protected login error used for safe classification') }}"
