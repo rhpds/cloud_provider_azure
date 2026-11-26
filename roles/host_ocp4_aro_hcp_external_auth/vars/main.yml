@@ -1,0 +1,7 @@
+---
+# Internal discovery and readiness results. They are not configuration inputs.
+_aro_hcp_auth_route: {}
+_aro_hcp_auth_console_url: "{{ undef(hint='Generated from the OpenShift console route') }}"
+_aro_hcp_auth_issuer: "{{ undef(hint='Generated from the Keycloak URL and realm') }}"
+_aro_hcp_auth_discovery: {}
+_aro_hcp_auth_console_operator: {}
