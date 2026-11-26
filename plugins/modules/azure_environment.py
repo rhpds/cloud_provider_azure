@@ -106,6 +106,18 @@ options:
       hcp_csr:
         description: PEM certificate request used for HCP temporary admin access.
         type: str
+      hcp_auth_name:
+        description: ARM externalAuths child resource name.
+        type: str
+      hcp_auth_issuer:
+        description: HTTPS OIDC issuer URL, including the realm path.
+        type: str
+      hcp_auth_client_id:
+        description: Confidential console client ID and accepted token audience.
+        type: str
+      hcp_auth_console_url:
+        description: Expected console URL from the OpenShift route, used to verify the target.
+        type: str
       hcp_nodepool:
         description: Single HCP worker node pool name.
         type: str
@@ -133,7 +145,7 @@ options:
     description: Provider operation.
     type: str
     required: true
-    choices: [validate, installer_prepare, provision, inventory, destroy, check_region_change, check_deployment_change, aro_check_sizes, aro_install, aro_destroy, hcp_check_region, hcp_credentials, start, stop, status]
+    choices: [validate, installer_prepare, provision, inventory, destroy, check_region_change, check_deployment_change, aro_check_sizes, aro_install, aro_destroy, hcp_check_region, hcp_credentials, hcp_external_auth, start, stop, status]
   template:
     description: Rendered ARM deployment template.
     type: dict
@@ -213,6 +225,8 @@ def execute(az, action, s, template):
         return az.aro_install(s)
     if action == 'hcp_credentials':
         return HCP(az, s).credentials(s['hcp_csr'])
+    if action == 'hcp_external_auth':
+        return HCP(az, s).configure_external_auth()
     if action == 'aro_check_sizes':
         az.check_aro_size_change(s)
         return {}
@@ -252,7 +266,8 @@ def argument_spec():
     settings_options = {key: dict(type='str') for key in (
         'sandbox_group', 'region', 'infra_group', 'cluster_group', 'cluster_name', 'dns_zone', 'method',
         'identity_mode', 'version', 'master_size', 'worker_size', 'vnet_cidr', 'master_cidr',
-        'worker_cidr', 'pod_cidr', 'service_cidr', 'hcp_nodepool', 'hcp_zone', 'hcp_integration_cidr', 'hcp_vault_name')}
+        'worker_cidr', 'pod_cidr', 'service_cidr', 'hcp_nodepool', 'hcp_zone', 'hcp_integration_cidr', 'hcp_vault_name',
+        'hcp_auth_name', 'hcp_auth_issuer', 'hcp_auth_client_id', 'hcp_auth_console_url')}
     settings_options.update(hcp=dict(type='bool', default=False), hcp_recover_vault=dict(type='bool', default=False),
                             hcp_csr=dict(type='str', no_log=True))
     settings_options.update(worker_count=dict(type='int'), worker_disk=dict(type='int'),
@@ -266,7 +281,7 @@ def argument_spec():
         config_dir=dict(type='path', required=True), project=dict(type='str', required=True),
         action=dict(type='str', required=True, choices=['validate', 'installer_prepare', 'provision', 'inventory', 'destroy',
                     'check_region_change', 'check_deployment_change', 'aro_check_sizes', 'aro_install', 'aro_destroy', 'hcp_check_region', 'hcp_credentials',
-                    'start', 'stop', 'status']),
+                    'hcp_external_auth', 'start', 'stop', 'status']),
         template=dict(type='dict', default={}))
 
 

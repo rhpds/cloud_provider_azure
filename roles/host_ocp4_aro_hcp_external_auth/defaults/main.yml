@@ -1,0 +1,35 @@
+---
+# Controller inputs normally supplied by Azure initialize and the v2 config.
+# azure_auth contains the Azure principal secret and must not be logged.
+azure_auth: "{{ undef(hint='Run Azure initialize on localhost') }}"
+azure_settings: "{{ undef(hint='Run Azure initialize for the original HCP deployment') }}"
+azure_cli_config_dir: "{{ undef(hint='Run Azure initialize on localhost') }}"
+project_tag: "{{ undef(hint='Supply the original deployment ownership tag') }}"
+output_dir: "{{ undef(hint='Restore the deployment output directory') }}"
+config: "{{ undef(hint='Supply the deployment config name') }}"
+guid: "{{ undef(hint='Supply the deployment GUID') }}"
+
+# Full path to the current HCP administrative kubeconfig on the controller.
+aro_hcp_external_auth_kubeconfig: "{{ output_dir }}/{{ config }}_{{ guid }}_kubeconfig"
+# ARM externalAuths child resource name, also used in the console Secret name.
+# Use 1–15 lowercase letters, digits, or hyphens, starting with a letter.
+aro_hcp_external_auth_name: keycloak
+# HTTPS Keycloak base URL and realm. The issuer is <base URL>/realms/<realm>.
+aro_hcp_external_auth_keycloak_url: "{{ undef(hint='Supply the HTTPS Keycloak base URL') }}"
+aro_hcp_external_auth_keycloak_realm: "{{ undef(hint='Supply the Keycloak realm') }}"
+# The Keycloak master-realm administrator manages the confidential client.
+aro_hcp_external_auth_keycloak_admin_username: "{{ undef(hint='Supply the Keycloak administrator username') }}"
+aro_hcp_external_auth_keycloak_admin_password: "{{ undef(hint='Supply the Keycloak administrator password') }}"
+# Keycloak OIDC client ID and secret. The secret is used only in Keycloak and
+# the console Secret in OpenShift. It is never sent to the ARM API.
+aro_hcp_external_auth_client_id: "{{ undef(hint='Supply the Keycloak console client ID') }}"
+aro_hcp_external_auth_client_secret: "{{ undef(hint='Supply the Keycloak console client secret') }}"
+
+# Internal discovery and readiness results. They are not configuration inputs.
+_aro_hcp_auth_route: {}
+_aro_hcp_auth_console_url: "{{ undef(hint='Generated from the OpenShift console route') }}"
+_aro_hcp_auth_issuer: "{{ undef(hint='Generated from the Keycloak URL and realm') }}"
+_aro_hcp_auth_discovery: {}
+_aro_hcp_auth_console_operator: {}
+# Controller fact published after the console operator is available.
+openshift_console_url: "{{ undef(hint='Generated from the healthy OpenShift console route') }}"

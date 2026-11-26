@@ -23,22 +23,80 @@ class HCPTests(unittest.TestCase):
         self.az.project = 'project'
         self.az.changed = False
         self.s = dict(cluster_group='cluster', cluster_name='aro-test', region='eastus2', method='aro',
-                      identity_mode='managed_identity', version='4.21.22', worker_count=2, worker_size='Standard_D4s_v5',
+                      identity_mode='managed_identity', version='5.0.1', worker_count=2, worker_size='Standard_D8s_v6',
                       worker_disk=128, hcp_nodepool='workers', hcp_zone='1', vnet_cidr='10.0.0.0/22',
                       worker_cidr='10.0.2.0/23', hcp_integration_cidr='10.0.0.0/28',
                       pod_cidr='10.128.0.0/14', service_cidr='172.30.0.0/16')
         self.h = hcp.HCP(self.az, self.s)
 
     def ready(self):
-        return {'tags': {'agnosticd_project': 'project'}, 'properties': {'provisioningState': 'Succeeded'}}
+        return {'tags': {'agnosticd_project': 'project'}, 'properties': {
+            'provisioningState': 'Succeeded', 'version': {'id': '5.0'}, 'platform': {'subnetId': '/test/worker-subnet'}}}
+
+    def test_external_auth_registers_the_keycloak_console_client_idempotently(self):
+        console = 'https://console.example.test'
+        issuer = 'https://keycloak.example.test/realms/sso'
+        self.s.update(hcp_auth_name='keycloak', hcp_auth_issuer=issuer,
+                      hcp_auth_client_id='idp-4-ocp', hcp_auth_console_url=console)
+        cluster = self.ready()
+        cluster['properties']['console'] = {'url': console + '/'}
+        self.h.show = Mock(side_effect=[cluster, None])
+        self.h.rest = Mock()
+
+        self.h.configure_external_auth()
+
+        method, url, body = self.h.rest.call_args.args
+        self.assertEqual((method, url), ('PUT', self.h.url + '/externalAuths/keycloak?api-version=' + hcp.API))
+        self.assertEqual(body['properties'], {
+            'issuer': {'url': issuer, 'audiences': ['idp-4-ocp']},
+            'claim': {'mappings': {'username': {'claim': 'preferred_username', 'prefixPolicy': 'NoPrefix'}}},
+            'clients': [{'clientId': 'idp-4-ocp', 'type': 'Confidential', 'extraScopes': ['profile'],
+                         'component': {'name': 'console', 'authClientNamespace': 'openshift-console'}}],
+        })
+        self.assertTrue(self.az.changed)
+        self.az.changed = False
+        self.h.show.side_effect = [cluster, body]
+        self.h.rest.reset_mock()
+
+        self.h.configure_external_auth()
+
+        self.assertFalse(self.az.changed)
+        self.h.rest.assert_not_called()
+
+    def test_external_auth_checks_cluster_ownership_and_console_before_mutating(self):
+        self.s.update(hcp_auth_name='keycloak', hcp_auth_issuer='https://keycloak.example.test/realms/sso',
+                      hcp_auth_client_id='idp-4-ocp', hcp_auth_console_url='https://console.example.test')
+        cluster = self.ready()
+        cluster['properties']['console'] = {'url': 'https://other.example.test'}
+        self.h.show = Mock(side_effect=[None, cluster])
+        self.h.rest = Mock()
+
+        with self.assertRaisesRegex(provider.AzureError, 'missing or unowned'):
+            self.h.configure_external_auth()
+        with self.assertRaisesRegex(provider.AzureError, 'does not match'):
+            self.h.configure_external_auth()
+
+        self.h.rest.assert_not_called()
 
     def test_validate_rejects_identity_count_and_overlapping_networks(self):
         self.h.validate()
         for change in ({'identity_mode': 'service_principal'}, {'worker_count': 1},
-                       {'hcp_integration_cidr': '10.0.2.0/28'}, {'version': '4.21'}, {'cluster_name': 'bad_name'}):
+                       {'hcp_integration_cidr': '10.0.2.0/28'}, {'version': '5.0'}, {'cluster_name': 'bad_name'},
+                       {'hcp_nodepool': 'sixteenlettersss'}, {'hcp_zone': 'eastus2-az2'}):
             with self.subTest(change=change), self.assertRaises(provider.AzureError):
                 hcp.HCP(self.az, dict(self.s, **change)).validate()
         self.az.call.assert_not_called()
+
+    def test_install_rejects_preview_version_but_destroy_still_works(self):
+        self.s['version'] = '4.21.22'
+        with self.assertRaisesRegex(provider.AzureError, 'exact OpenShift 5 release'):
+            self.h.install('/unused/template.json')
+        self.az.group.assert_not_called()
+        self.h.show = Mock(side_effect=[self.ready(), None])
+        self.h.rest = Mock()
+        self.az.call.return_value = None
+        self.h.destroy()
+        self.az.delete_group.assert_called_once_with('cluster', 'eastus2')
 
     def test_ready_cluster_and_pool_are_reused_without_deployment(self):
         self.h.show = Mock(return_value=self.ready())
@@ -110,8 +168,10 @@ class HCPTests(unittest.TestCase):
     def test_new_deployment_passes_explicit_parameters_and_waits_for_pool(self):
         self.h.show = Mock(return_value=None)
         self.h.preflight = Mock()
-        self.h.physical_zone = 'eastus2-az2'
-        self.h.wait = Mock(return_value=self.ready())
+        operations = Mock()
+        self.h.wait = operations.wait
+        self.h.wait.return_value = self.ready()
+        self.h.rest = operations.rest
         captured = {}
         def cli(*args, **kwargs):
             if args[0] == 'provider':
@@ -123,24 +183,51 @@ class HCPTests(unittest.TestCase):
             if args[:2] == ('group', 'show'):
                 return None
             if args[:3] == ('deployment', 'group', 'create'):
+                operations.deploy()
                 captured.update(json.loads(Path(args[args.index('--parameters') + 1][1:]).read_text()))
                 return {}
             raise AssertionError(args)
         self.az.call.side_effect = cli
         self.h.install('hcp.json')
-        self.assertEqual(captured['workerCount']['value'], 2)
-        self.assertEqual(captured['clusterVersion']['value'], '4.21')
-        self.assertEqual(captured['nodePoolVersion']['value'], '4.21.22')
-        self.assertEqual(captured['workerZone']['value'], 'eastus2-az2')
+        self.assertEqual(captured['clusterVersion']['value'], '5.0')
+        self.assertNotIn('nodePoolVersion', captured)
         self.assertEqual(captured['customerKeyVaultName']['value'], self.h.vault)
-        self.assertEqual(self.h.wait.call_args_list[-1].args, ('/nodePools/workers',))
+        self.assertEqual([item[0] for item in operations.mock_calls], ['deploy', 'wait', 'rest', 'wait'])
+        method, url, body = self.h.rest.call_args.args
+        self.assertEqual((method, url), ('PUT', self.h.url + '/nodePools/workers?api-version=' + hcp.API))
+        self.assertEqual(body['properties']['version'], {'id': '5.0.1', 'channelGroup': 'stable'})
+        self.assertEqual(body['properties']['replicas'], 2)
+        self.assertEqual(body['properties']['platform']['subnetId'], '/test/worker-subnet')
+        self.assertEqual(body['properties']['platform']['availabilityZone'], '1')
         self.assertTrue(self.az.changed)
+
+    def test_missing_pool_resumes_without_redeploying_cluster_or_pinning_zone(self):
+        self.h.show = Mock(side_effect=[self.ready(), None])
+        self.h.wait = Mock(return_value=self.ready())
+        self.h.rest = Mock()
+        self.h.preflight = Mock()
+        self.s['hcp_zone'] = ''
+        self.h.install('/unused/template.json')
+        self.az.call.assert_not_called()
+        self.h.preflight.assert_called_once_with()
+        self.assertNotIn('availabilityZone', self.h.rest.call_args.args[2]['properties']['platform'])
+        self.h.wait.assert_called_once_with('/nodePools/workers')
+
+    def test_failed_or_unowned_pool_is_never_recreated(self):
+        failed = self.ready()
+        failed['properties']['provisioningState'] = 'Failed'
+        for pool in (failed, {'tags': {}}):
+            self.h.show = Mock(side_effect=[self.ready(), pool, pool])
+            self.h.rest = Mock()
+            with self.assertRaises(provider.AzureError):
+                self.h.install('/unused/template.json')
+            self.h.rest.assert_not_called()
 
     def test_matching_archive_recovers_only_its_owned_soft_deleted_vault(self):
         self.h.show = Mock(return_value=None)
         self.h.preflight = Mock()
-        self.h.physical_zone = 'eastus2-az1'
         self.h.wait = Mock(return_value=self.ready())
+        self.h.rest = Mock()
         self.s['hcp_recover_vault'] = True
         def cli(*args, **kwargs):
             if args[0] == 'provider':
@@ -174,8 +261,8 @@ class HCPTests(unittest.TestCase):
     def test_existing_vault_uses_resource_id_and_project_ownership(self):
         self.h.show = Mock(return_value=None)
         self.h.preflight = Mock()
-        self.h.physical_zone = 'eastus2-az1'
         self.h.wait = Mock(return_value=self.ready())
+        self.h.rest = Mock()
         expected = '/subscriptions/subscription/resourceGroups/cluster/providers/Microsoft.KeyVault/vaults/' + self.h.vault
         for resource_id, project, success in ((expected.upper(), 'project', True),
                                               (expected, 'other-project', False),
@@ -242,38 +329,46 @@ class HCPTests(unittest.TestCase):
         self.h.rest.assert_not_called()
         self.az.delete_group.assert_called_once_with('cluster', 'eastus2')
 
-    def test_generated_template_has_hcp_pool_and_no_classic_control_plane(self):
+    def test_generated_template_creates_only_the_hcp_control_plane_and_prerequisites(self):
         template = json.loads((ROOT / 'roles/host_ocp4_aro_install/templates/hcp.json').read_text())
         resources = template['resources']
         types = [r['type'] for r in resources]
         self.assertIn('Microsoft.RedHatOpenShift/hcpOpenShiftClusters', types)
-        self.assertIn('Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools', types)
+        self.assertNotIn('Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools', types)
+        cluster = next(r for r in resources if r['type'] == 'Microsoft.RedHatOpenShift/hcpOpenShiftClusters')
+        self.assertEqual(cluster['apiVersion'], hcp.API)
         self.assertNotIn('Microsoft.Compute/virtualMachines', types)
         vault = next(r for r in resources if r['type'] == 'Microsoft.KeyVault/vaults')
         # Key Vault rejects explicit false, including on first creation. Omitting
         # the setting also avoids disabling protection on an existing vault.
         self.assertNotIn('enablePurgeProtection', vault['properties'])
         self.assertEqual(vault['properties']['softDeleteRetentionInDays'], 7)
-        pool = next(r for r in resources if r['type'].endswith('/nodePools'))
-        self.assertEqual(pool['properties']['platform']['availabilityZone'], "[parameters('workerZone')]")
 
     def test_preflight_uses_worker_quota_floor_and_exact_versions(self):
-        self.h.rest = Mock(return_value={'value': [{'name': '4.21.22'}]})
+        enabled = {'name': '5.0.1', 'properties': {'channelGroup': 'stable', 'enabled': True}}
+        self.h.rest = Mock(return_value={'value': [enabled]})
         def cli(*args):
             if args[:2] == ('provider', 'show'):
                 return {'resourceTypes': [{'resourceType': 'HCPOpenShiftClusters', 'locations': ['East US 2']}]}
             if args[:2] == ('vm', 'list-skus'):
                 return [{'name': self.s['worker_size'], 'family': 'StandardDSv5Family', 'restrictions': [],
                          'locationInfo': [{'zones': ['1']}], 'capabilities': [{'name': 'vCPUs', 'value': '4'}]}]
-            if args[:2] == ('account', 'list-locations'):
-                return [{'name': 'eastus2', 'availabilityZoneMappings': [{'logicalZone': '1', 'physicalZone': 'eastus2-az2'}]}]
-            return [{'name': {'value': n}, 'limit': 20, 'currentValue': 0} for n in ('cores', 'standardDSv5Family')]
+            if args[:2] == ('vm', 'list-usage'):
+                return [{'name': {'value': n}, 'limit': 20, 'currentValue': 0} for n in ('cores', 'standardDSv5Family')]
+            raise AssertionError(args)
         self.az.call.side_effect = cli
         self.h.preflight()
-        self.assertEqual(self.h.physical_zone, 'eastus2-az2')
-        self.h.rest.return_value = {'value': [{'name': '4.21.220'}]}
-        with self.assertRaisesRegex(provider.AzureError, 'version is unavailable'):
+        self.s['hcp_zone'] = '2'
+        with self.assertRaisesRegex(provider.AzureError, 'worker SKU or availability zone is unavailable'):
             self.h.preflight()
+        self.s['hcp_zone'] = ''
+        self.h.preflight()
+        for item in (dict(enabled, name='5.0.10'),
+                     dict(enabled, properties={'channelGroup': 'stable', 'enabled': False}),
+                     dict(enabled, properties={'channelGroup': 'candidate', 'enabled': True})):
+            with self.subTest(item=item), self.assertRaisesRegex(provider.AzureError, 'version is unavailable'):
+                self.h.rest.return_value = {'value': [item]}
+                self.h.preflight()
 
     def test_region_discovery_accepts_new_hcp_regions_and_ignores_classic_locations(self):
         self.az.call.return_value = {'resourceTypes': [
@@ -314,6 +409,84 @@ class HCPTests(unittest.TestCase):
         with patch.object(hcp.urllib.request, 'build_opener', return_value=opener), patch.object(hcp.time, 'sleep'):
             result = self.h.rest('POST', self.h.url, {'certificateSigningRequest': 'csr'})
         self.assertEqual(result['kubeconfig'], 'private-config')
+
+    def test_credential_request_uses_location_when_status_response_has_no_payload(self):
+        self.az.call.return_value = {'accessToken': 'secret-token'}
+        self.h.show = Mock(return_value=self.ready())
+        status_url = self.h.root + '/operations/credential'
+        result_url = self.h.root + '/operationResults/credential'
+        credential = {'kubeconfig': 'apiVersion: v1\\nkind: Config', 'expirationTimestamp': '2026-11-26T10:00:00Z'}
+        responses = [
+            (202, {}, {'Azure-AsyncOperation': status_url, 'Location': result_url, 'Retry-After': '0'}),
+            (200, {}, {}),
+            (200, credential, {}),
+        ]
+        opener = Mock()
+        mocked_responses = []
+        for status, result, headers in responses:
+            response = Mock(status=status, headers=headers)
+            response.read.return_value = json.dumps(result).encode()
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock()
+            mocked_responses.append(response)
+        opener.open.side_effect = mocked_responses
+
+        with patch.object(hcp.urllib.request, 'build_opener', return_value=opener), patch.object(hcp.time, 'sleep'):
+            result = self.h.credentials('csr')
+
+        self.assertEqual(result, dict(credential, kubeconfig='apiVersion: v1\nkind: Config'))
+        requests = [call.args[0] for call in opener.open.call_args_list]
+        self.assertEqual([request.full_url for request in requests[1:]], [status_url, result_url])
+        self.assertEqual([request.get_method() for request in requests], ['POST', 'GET', 'GET'])
+
+    def test_credentials_retry_incomplete_results_and_reuse_the_csr(self):
+        self.h.show = Mock(return_value=self.ready())
+        expected = {'kubeconfig': 'private-config', 'expirationTimestamp': '2026-11-26T10:00:00Z'}
+        self.h.rest = Mock(side_effect=[{}, {'kubeconfig': 'partial'}, expected])
+        with patch.object(hcp.time, 'sleep') as sleep:
+            self.assertEqual(self.h.credentials('csr'), expected)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(self.h.rest.call_count, 3)
+        self.assertTrue(all(call.args[2] == {'certificateSigningRequest': 'csr'}
+                            for call in self.h.rest.call_args_list))
+
+    def test_credentials_report_incomplete_output_without_exposing_the_payload(self):
+        self.h.show = Mock(return_value=self.ready())
+        self.h.rest = Mock(return_value={'kubeconfig': 'partial-sensitive-value'})
+        with patch.object(hcp.time, 'sleep'), self.assertRaises(provider.AzureError) as error:
+            self.h.credentials('csr')
+        self.assertIn('after 3 attempts. Missing or invalid fields include expirationTimestamp.', str(error.exception))
+        self.assertNotIn('partial-sensitive-value', str(error.exception))
+        self.assertEqual(self.h.rest.call_count, 3)
+
+    def test_credentials_do_not_resubmit_after_an_explicit_azure_error(self):
+        self.h.show = Mock(return_value=self.ready())
+        self.h.rest = Mock(side_effect=provider.AzureError('HCP ARM request failed with HTTP 400'))
+        with patch.object(hcp.time, 'sleep') as sleep, self.assertRaisesRegex(provider.AzureError, 'HTTP 400'):
+            self.h.credentials('csr')
+        self.h.rest.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_pool_creation_follows_201_operation_until_azure_reports_failure(self):
+        self.az.call.return_value = {'accessToken': 'secret-token'}
+        initial, failed = Mock(), Mock()
+        initial.status = 201
+        operation = self.h.root + '/operation'
+        initial.headers = {'Azure-AsyncOperation': operation, 'Retry-After': '0'}
+        initial.read.return_value = b'{"properties": {"provisioningState": "Provisioning"}}'
+        failed.status = 200
+        failed.headers = {}
+        failed.read.return_value = b'{"status": "Failed", "error": {"code": "DeadlineExceeded"}}'
+        for response in (initial, failed):
+            response.__enter__ = Mock(return_value=response)
+            response.__exit__ = Mock(return_value=None)
+        opener = Mock()
+        opener.open.side_effect = [initial, failed]
+        with patch.object(hcp.urllib.request, 'build_opener', return_value=opener), patch.object(hcp.time, 'sleep'):
+            with self.assertRaisesRegex(provider.AzureError, 'DeadlineExceeded'):
+                self.h.rest('PUT', self.h.url + '/nodePools/workers', {})
+        poll_request = opener.open.call_args.args[0]
+        self.assertEqual((poll_request.get_method(), poll_request.full_url), ('GET', operation))
 
 
 if __name__ == '__main__':

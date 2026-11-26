@@ -237,11 +237,12 @@ def main():
         # Exercise real HCP normalization/archives through the module without any ARM HTTP calls.
         hcp_output = root / 'hcp-output'
         hcp_output.mkdir()
-        hcp_vars = dict(flat, azure_region='eastus2', aro_deploy_hcp=True, expected_hcp=True,
+        hcp_vars = dict(flat, azure_region='eastus2', aro_deploy_hcp=True, aro_version='5.0.1', expected_hcp=True,
                         expected_region='eastus2', expected_worker_count=2, output_dir=str(hcp_output),
                         ansible_python_interpreter=sys.executable)
         hcp_archive = hcp_output / 'openshift-cluster_test_azure_ownership.json'
-        for label, overrides, success in [('new-hcp', {}, True), ('reuse-hcp', {}, True)]:
+        for label, overrides, success in [('new-hcp', {}, True), ('reuse-hcp', {}, True),
+                                          ('reject-preview-version', {'aro_version': '4.22.1'}, False)]:
             variables_file = root / ('hcp-' + label + '.json')
             variables_file.write_text(json.dumps(dict(hcp_vars, **overrides)))
             before = hcp_archive.read_text() if hcp_archive.exists() else None
@@ -257,14 +258,27 @@ def main():
         # Reuse a completed deployment's archive across HCP/classic modes only
         # after every archived deployment group is absent. Failures preserve it.
         hcp_saved = json.loads(hcp_archive.read_text())
+        old_zone_archive = dict(hcp_saved, settings=dict(hcp_saved['settings'], hcp_zone='1'))
+        for action in ('provision', 'status', 'destroy'):
+            hcp_archive.write_text(json.dumps(old_zone_archive))
+            variables_file = root / ('hcp-archived-zone-' + action + '.json')
+            variables_file.write_text(json.dumps(dict(hcp_vars, ACTION=action, expected_hcp_zone='1')))
+            run = subprocess.run([sys.executable, '-m', 'ansible.cli.playbook',
+                                  str(collection / 'tests/integration/initialize.yml'), '-e', '@' + str(variables_file)],
+                                 cwd=collection, env=env, text=True, capture_output=True, check=False)
+            if run.returncode or json.loads(hcp_archive.read_text())['settings']['hcp_zone'] != '1':
+                print(run.stdout + run.stderr)
+                return 1
+            print('PASS: HCP ' + action + ' keeps legacy archived zone when unset')
         classic_saved = json.loads(json.dumps(hcp_saved))
         classic_saved['settings'] = {key: value for key, value in classic_saved['settings'].items()
                                      if not key.startswith('hcp_')}
-        classic_saved['settings'].update(hcp=False, region='eastus', worker_count=3)
+        classic_version = legacy['settings']['version']
+        classic_saved['settings'].update(hcp=False, region='eastus', worker_count=3, version=classic_version)
         deployment_groups = [hcp_saved['settings']['infra_group'], hcp_saved['settings']['cluster_group'],
                              hcp_saved['settings']['cluster_group'] + '-managed']
         classic_vars = dict(hcp_vars, aro_deploy_hcp=False, expected_hcp=False, azure_region='eastus',
-                            expected_region='eastus', expected_worker_count=3)
+                            expected_region='eastus', expected_worker_count=3, aro_version=classic_version)
         transitions = [('hcp-to-classic', hcp_saved, classic_vars),
                        ('classic-to-hcp', classic_saved, hcp_vars)]
         for transition, archived, requested in transitions:

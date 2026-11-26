@@ -6,12 +6,13 @@ import re
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 from ansible_collections.agnosticd.cloud_provider_azure.plugins.module_utils.provider import AzureError, owned
 
-API = '2026-09-01-preview'
+API = '2026-10-01'
 
 
 def check_region(azure, region):
@@ -48,7 +49,7 @@ class HCP:
         if settings.get('hcp_vault_name') and settings['hcp_vault_name'] != self.vault:
             raise AzureError('HCP vault identity differs from deterministic ownership')
 
-    def rest(self, method, url, body=None, missing=False):
+    def rest(self, method, url, body=None, missing=False, result_fields=()):
         """Retain response headers for ARM asynchronous operations; never log tokens."""
         if not url.startswith('https://management.azure.com/'):
             raise AzureError('Refusing an ARM operation URL outside management.azure.com')
@@ -81,9 +82,14 @@ class HCP:
                 raise AzureError('HCP operation failed: ' + str(error.get('code', state)))
             operation = headers.get('Azure-AsyncOperation') or headers.get('Location')
             result_url = headers.get('Location') or result_url
-            if status != 202 and state not in ('InProgress', 'Running', 'Accepted'):
-                if state == 'Succeeded' and result_url and result_url != url:
+            # Node pool creation returns 201 with an Azure-AsyncOperation URL.
+            if status != 202 and not (status == 201 and operation) and state not in ('InProgress', 'Running', 'Accepted'):
+                # A credential action can return a status-only or empty reply.
+                # Use the result URL from Location to retrieve the actual payload.
+                incomplete = any(not result.get(field) for field in result_fields)
+                if result_url and result_url != url and (state == 'Succeeded' or incomplete):
                     url, method, body = result_url, 'GET', None
+                    result_url = None
                     continue
                 return result
             if time.monotonic() >= deadline:
@@ -104,8 +110,10 @@ class HCP:
             raise AzureError('HCP requires installation method aro and managed_identity')
         if not re.fullmatch(r'[a-zA-Z]([-a-zA-Z0-9]{0,52}[a-zA-Z0-9])?', s['cluster_name']):
             raise AzureError('Invalid HCP cluster name')
-        if not re.fullmatch(r'[a-zA-Z]([-a-zA-Z0-9]{0,52}[a-zA-Z0-9])?', s['hcp_nodepool']):
+        if not re.fullmatch(r'[a-zA-Z]([-a-zA-Z0-9]{0,13}[a-zA-Z0-9])?', s['hcp_nodepool']):
             raise AzureError('Invalid HCP node pool name')
+        if s.get('hcp_zone') and not re.fullmatch(r'[1-9][0-9]*', s['hcp_zone']):
+            raise AzureError('Set aro_hcp_availability_zone to a logical zone such as 1, 2 or 3, or leave it empty')
         if not re.fullmatch(r'\d+\.\d+\.\d+', s['version']) or s['worker_count'] < 2:
             raise AzureError('HCP requires an exact release and at least two workers')
         networks = {k: ipaddress.ip_network(s[k]) for k in
@@ -129,33 +137,22 @@ class HCP:
         versions = self.rest('GET', 'https://management.azure.com/subscriptions/' + self.az.auth['subscription_id']
                              + '/providers/Microsoft.RedHatOpenShift/locations/' + s['region']
                              + '/hcpOpenShiftVersions?api-version=' + API)
-        def version_strings(value):
-            if isinstance(value, str):
-                yield value.rsplit('/', 1)[-1]
-            elif isinstance(value, dict):
-                for item in value.values():
-                    yield from version_strings(item)
-            elif isinstance(value, list):
-                for item in value:
-                    yield from version_strings(item)
-        available = set(version_strings(versions))
-        while versions.get('nextLink'):
+        while not any(item.get('name') == s['version']
+                      and item.get('properties', {}).get('enabled', True)
+                      and item.get('properties', {}).get('channelGroup') == 'stable'
+                      for item in versions.get('value', [])):
+            if not versions.get('nextLink'):
+                raise AzureError('Requested HCP version is unavailable in the selected region',
+                                 {'kind': 'version', 'version': s['version']})
             versions = self.rest('GET', versions['nextLink'])
-            available.update(version_strings(versions))
-        if s['version'] not in available:
-            raise AzureError('Requested HCP version is unavailable in the selected region',
-                             {'kind': 'version', 'version': s['version']})
         skus = self.az.call('vm', 'list-skus', '--location', s['region'], '--resource-type', 'virtualMachines', '--all')
         sku = next((x for x in skus if x['name'] == s['worker_size'] and not x.get('restrictions')), None)
-        if not sku or not any(s['hcp_zone'] in info.get('zones', []) for info in sku.get('locationInfo', [])):
+        zone = s['hcp_zone']
+        if not sku or (zone and not any(zone in info.get('zones', []) for info in sku.get('locationInfo', []))):
             raise AzureError('HCP worker SKU or availability zone is unavailable',
                              {'kind': 'sku', 'setting': s['worker_size'],
-                              'reasons': ['SKU or logical availability zone ' + s['hcp_zone'] + ' is unavailable']})
-        locations = self.az.call('account', 'list-locations')
-        mapping = next((loc.get('availabilityZoneMappings', []) for loc in locations if loc['name'] == s['region']), [])
-        self.physical_zone = next((zone['physicalZone'] for zone in mapping if zone['logicalZone'] == s['hcp_zone']), None)
-        if not self.physical_zone:
-            raise AzureError('Could not resolve HCP logical zone to its physical availability zone')
+                              'reasons': ['SKU or logical availability zone ' + zone + ' is unavailable'
+                                          if zone else 'SKU is unavailable']})
         cores = int(next(x['value'] for x in sku['capabilities'] if x['name'] == 'vCPUs'))
         required = max(20, cores * (s['worker_count'] + 1))
         usage = self.az.call('vm', 'list-usage', '--location', s['region'])
@@ -181,20 +178,15 @@ class HCP:
     def install(self, template):
         self.validate()
         s = self.s
+        if not s['version'].startswith('5.'):
+            raise AzureError('HCP provisioning requires an exact OpenShift 5 release',
+                             {'kind': 'version', 'version': s['version']})
         self.az.group(s['cluster_group'], s['region'])
-        current = self.show()
-        if current and not owned(current, self.az.project):
-            raise AzureError('Refusing unowned HCP cluster')
-        if current and current.get('properties', {}).get('provisioningState') not in ('Succeeded', 'Failed', 'Canceled'):
-            current = self.wait()
-        pool = self.show('/nodePools/' + s['hcp_nodepool']) if current else None
-        if pool and not owned(pool, self.az.project):
-            raise AzureError('Refusing unowned HCP node pool')
-        for resource in (current, pool):
-            if resource and resource.get('properties', {}).get('provisioningState') in ('Failed', 'Canceled'):
-                raise AzureError('Existing HCP resource failed; inspect and destroy explicitly')
-        if not current or not pool:
-            if not current and self.az.call('group', 'show', '--name', s['cluster_group'] + '-managed', missing=True):
+        cluster = self.show()
+        new_cluster = cluster is None
+        cluster_version = '.'.join(s['version'].split('.')[:2])
+        if new_cluster:
+            if self.az.call('group', 'show', '--name', s['cluster_group'] + '-managed', missing=True):
                 raise AzureError('HCP managed resource group already exists; complete previous destruction first')
             for namespace in ('Microsoft.RedHatOpenShift', 'Microsoft.Compute', 'Microsoft.Network', 'Microsoft.Storage',
                               'Microsoft.ManagedIdentity', 'Microsoft.Authorization', 'Microsoft.KeyVault'):
@@ -217,13 +209,11 @@ class HCP:
                         raise AzureError('Refusing recovery of a vault without matching archived ownership')
                     self.az.call('keyvault', 'recover', '--name', self.vault, '--resource-group', s['cluster_group'])
             parameters = dict(customerNsgName='hcp-nsg', customerVnetName='hcp-vnet', customerVnetSubnetName='workers',
-                customerVirtualNetworkIntegrationSubnetName='integration', clusterName=s['cluster_name'],
-                managedResourceGroupName=s['cluster_group'] + '-managed', nodePoolName=s['hcp_nodepool'],
-                clusterVersion='.'.join(s['version'].split('.')[:2]), nodePoolVersion=s['version'],
-                customerKeyVaultName=self.vault, projectTag=self.az.project, addressPrefix=s['vnet_cidr'],
-                subnetPrefix=s['worker_cidr'], virtualNetworkIntegrationSubnetPrefix=s['hcp_integration_cidr'],
-                workerSize=s['worker_size'], workerCount=s['worker_count'], workerDisk=s['worker_disk'],
-                workerZone=self.physical_zone, podCidr=s['pod_cidr'], serviceCidr=s['service_cidr'])
+                              customerVirtualNetworkIntegrationSubnetName='integration', clusterName=s['cluster_name'],
+                              managedResourceGroupName=s['cluster_group'] + '-managed', clusterVersion=cluster_version,
+                              customerKeyVaultName=self.vault, projectTag=self.az.project, addressPrefix=s['vnet_cidr'],
+                              subnetPrefix=s['worker_cidr'], virtualNetworkIntegrationSubnetPrefix=s['hcp_integration_cidr'],
+                              podCidr=s['pod_cidr'], serviceCidr=s['service_cidr'])
             with tempfile.TemporaryDirectory() as tmp:
                 path = Path(tmp) / 'parameters.json'
                 path.write_text(json.dumps({k: {'value': v} for k, v in parameters.items()}))
@@ -241,8 +231,44 @@ class HCP:
                             raise
                         time.sleep(30)
             self.az.changed = True
-        cluster = self.wait()
-        pool = self.wait('/nodePools/' + s['hcp_nodepool'])
+        elif not owned(cluster, self.az.project):
+            raise AzureError('Refusing unowned HCP cluster')
+        elif cluster.get('properties', {}).get('provisioningState') in ('Failed', 'Canceled'):
+            raise AzureError('Existing HCP cluster failed; inspect and destroy explicitly')
+
+        # A retry with an existing control plane resumes at the worker pool.
+        if new_cluster or cluster.get('properties', {}).get('provisioningState') != 'Succeeded':
+            cluster = self.wait()
+        if not owned(cluster, self.az.project):
+            raise AzureError('Refusing unowned HCP cluster')
+
+        suffix = '/nodePools/' + s['hcp_nodepool']
+        pool = self.show(suffix)
+        if not pool:
+            properties = cluster['properties']
+            if properties.get('version', {}).get('id') != cluster_version:
+                raise AzureError('Existing HCP control plane version differs from the requested minor release')
+            subnet = properties.get('platform', {}).get('subnetId')
+            if not subnet:
+                raise AzureError('HCP control plane did not return a worker subnet ID')
+            if not new_cluster:
+                self.preflight()
+            platform = dict(subnetId=subnet, vmSize=s['worker_size'],
+                            osDisk={'sizeGiB': s['worker_disk'], 'diskStorageAccountType': 'Premium_LRS'})
+            if s['hcp_zone']:
+                platform['availabilityZone'] = s['hcp_zone']
+            body = dict(location=s['region'], tags={'agnosticd_project': self.az.project},
+                        properties=dict(version={'id': s['version'], 'channelGroup': 'stable'},
+                                        platform=platform, replicas=s['worker_count'], autoRepair=True))
+            self.rest('PUT', self.url + suffix + '?api-version=' + API, body)
+            self.az.changed = True
+        elif not owned(pool, self.az.project):
+            raise AzureError('Refusing unowned HCP node pool')
+
+        if not pool or pool.get('properties', {}).get('provisioningState') != 'Succeeded':
+            pool = self.wait(suffix)
+        if not owned(pool, self.az.project):
+            raise AzureError('Refusing unowned HCP node pool')
         return dict(cluster=cluster, nodepool=pool)
 
     def credentials(self, csr):
@@ -252,11 +278,62 @@ class HCP:
             raise AzureError('Cannot request HCP credentials before the cluster exists')
         if not owned(cluster, self.az.project):
             raise AzureError('Refusing credentials for an unowned HCP cluster')
-        result = self.rest('POST', self.url + '/requestAdminCredential?api-version=' + API,
-                           {'certificateSigningRequest': csr})
-        if not result.get('kubeconfig') or not result.get('expirationTimestamp'):
-            raise AzureError('HCP credential operation did not return a kubeconfig and expiry')
-        return result
+        url = self.url + '/requestAdminCredential?api-version=' + API
+        fields = ('kubeconfig', 'expirationTimestamp')
+        for attempt in range(3):
+            result = self.rest('POST', url, {'certificateSigningRequest': csr}, result_fields=fields)
+            missing = [field for field in fields if not isinstance(result.get(field), str) or not result[field].strip()]
+            if not missing:
+                result['kubeconfig'] = result['kubeconfig'].replace('\\n', '\n')
+                return result
+            if attempt < 2:
+                time.sleep(15)
+        raise AzureError('HCP credential operation returned an incomplete result after 3 attempts. '
+                         'Missing or invalid fields include ' + ', '.join(missing) + '.')
+
+    def configure_external_auth(self):
+        name = self.s['hcp_auth_name']
+        issuer = self.s['hcp_auth_issuer']
+        client_id = self.s['hcp_auth_client_id']
+        console_url = self.s['hcp_auth_console_url']
+        if not re.fullmatch(r'[a-z]([-a-z0-9]{0,13}[a-z0-9])?', name or ''):
+            raise AzureError('Invalid HCP external authentication provider name')
+        url = urllib.parse.urlsplit(issuer or '')
+        if url.scheme != 'https' or not url.hostname or url.username or url.query or url.fragment:
+            raise AzureError('HCP external authentication requires an HTTPS issuer URL')
+        if not client_id:
+            raise AzureError('HCP external authentication requires a client ID')
+        cluster = self.show()
+        if not cluster or not owned(cluster, self.az.project):
+            raise AzureError('Refusing to configure authentication for a missing or unowned HCP cluster')
+        cluster_properties = cluster['properties']
+        if cluster_properties.get('provisioningState') != 'Succeeded':
+            raise AzureError('The ARO HCP cluster must be ready before configuring authentication')
+        if (cluster_properties.get('console', {}).get('url') or '').rstrip('/') != console_url:
+            raise AzureError('The console route in the kubeconfig does not match the owned ARO HCP cluster')
+
+        suffix = '/externalAuths/' + name
+        desired = {
+            'issuer': {'url': issuer, 'audiences': [client_id]},
+            'claim': {'mappings': {'username': {'claim': 'preferred_username', 'prefixPolicy': 'NoPrefix'}}},
+            'clients': [{
+                'clientId': client_id,
+                'component': {'name': 'console', 'authClientNamespace': 'openshift-console'},
+                'extraScopes': ['profile'],
+                'type': 'Confidential',
+            }],
+        }
+        current = self.show(suffix)
+        if current:
+            properties = current['properties']
+            if (properties.get('issuer', {}).get('url') != issuer
+                    or client_id not in properties.get('issuer', {}).get('audiences', [])):
+                raise AzureError('An HCP authentication provider with this name belongs to a different issuer or client')
+            if all(properties.get(key) == value for key, value in desired.items()):
+                return {}
+        self.rest('PUT', self.url + suffix + '?api-version=' + API, {'properties': desired})
+        self.az.changed = True
+        return {}
 
     def destroy(self):
         s = self.s

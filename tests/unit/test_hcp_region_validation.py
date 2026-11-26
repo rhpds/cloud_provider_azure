@@ -51,6 +51,7 @@ class HCPEarlyRegionTests(unittest.TestCase):
                     trace.write_text('')
                     variables = dict(config='openshift-cluster', guid='test', project_tag='openshift-cluster-test',
                                      output_dir=str(output), host_ocp4_deploy_installation_method='aro', aro_deploy_hcp=True,
+                                     aro_version='5.0.1',
                                      azure_subscription=credentials['subscription_id'],
                                      azure_service_principal_id=credentials['app_id'],
                                      azure_service_principal_password=credentials['password'], azure_tenant=credentials['tenant'],

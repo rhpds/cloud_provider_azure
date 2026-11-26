@@ -24,9 +24,11 @@ guid: "{{ undef(hint='Supply the deployment guid') }}"
 # HCP exports kubeconfig and <config>_<guid>_hcp_credentials.json expiry instead;
 # it has no kubeadmin password. Its access role refreshes every kubeconfig copy.
 output_dir: "{{ undef(hint='Supply the controller output_dir') }}"
-# ocp4_pull_secret (secret JSON string or mapping): optional for ARO. When
-# supplied, passed through a private temporary file and protected module output.
-# Self-managed IPI requires a pull secret through the shared installer instead.
+# ocp4_pull_secret (secret JSON string or mapping): Docker config with an auths
+# object containing Red Hat registry credentials. Optional for classic ARO,
+# which passes it at creation through a private temporary file when supplied.
+# Required for HCP, which merges it into the additional-pull-secret after
+# administrative access is ready.
 ocp4_pull_secret: ""
 # azure_cli_version (string): version passed to the included install_cli role;
 # match the controller execution environment and repository availability.
@@ -58,6 +60,13 @@ bastion_setup_student_user: false
 bastion_student_user_name: "{{ undef(hint='Supply the existing student username when student access is enabled') }}"
 
 # Internal outputs and task-local values. They are not configuration inputs.
+# _aro_registry_config (secret mapping): normalized Docker config for ARO.
+_aro_registry_config: "{{ undef(hint='Internal protected ARO registry credentials') }}"
+# _aro_hcp_pull_secret (secret mapping): Kubernetes query for the HCP additional secret.
+_aro_hcp_pull_secret: "{{ undef(hint='Internal protected HCP pull secret query result') }}"
+# Current additional Secret and decoded Docker config, scoped to the update task.
+_aro_hcp_pull_secret_current: "{{ undef(hint='Internal protected HCP additional pull secret') }}"
+_aro_hcp_registry_config_current: "{{ undef(hint='Internal protected HCP Docker config') }}"
 # azure_aro_result (secret mapping): async provisioning result with cluster API
 # URL and kubeadmin credentials. Regular ARO publishes credentials.kubeadminPassword
 # as agnosticd_user_info data.openshift_kubeadmin_password after successful login.

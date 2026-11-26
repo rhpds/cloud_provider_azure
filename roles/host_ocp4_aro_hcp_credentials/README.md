@@ -20,10 +20,12 @@ discover its bastion inventory and restore SSH configuration, then include:
     name: agnosticd.cloud_provider_azure.host_ocp4_aro_hcp_credentials
 ```
 
-The role generates an RSA-2048 private key and CSR locally on the bastion and
+The role generates an RSA-4096 private key and CSR locally on the bastion and
 requests a certificate using Azure's pinned HCP API. Azure supplies a kubeconfig
 and expiration timestamp; the private key is inserted locally and never sent to
-Azure. The certificate normally expires after 24 hours. This is administrative
+Azure. The role follows the ARM operation's result URL and retries an
+incomplete result up to twice using the same CSR. The certificate normally
+expires after 24 hours. This is administrative
 CLI access, not an OIDC identity or a kubeadmin password.
 
 The kubeconfig is saved to `/home/<ansible_user>/<cluster_name>/auth/kubeconfig`

@@ -86,8 +86,10 @@ aro_cluster_name: "aro-{{ guid }}"
 aro_identity_mode: managed_identity
 # aro_version (string): REQUIRED for ARO; exact value from the read-only command
 # az aro get-versions --location <azure_region>. Empty is allowed for IPI.
-# For HCP use the hcpOpenShiftVersions REST endpoint in the collection guide;
-# its exact release also selects the worker pool and downloaded client version.
+# For HCP provisioning use an enabled stable OpenShift 5 patch from the regional
+# hcpOpenShiftVersions catalog. The control plane uses its minor release and the
+# worker pool and downloaded client use the exact patch. Older archived values
+# can still be supplied for lifecycle and destroy.
 aro_version: ""
 # aro_master_vm_size (string): Azure SKU for each of three control-plane nodes.
 # Classic quota preflight reserves a fourth node of this size for bootstrap.
@@ -149,11 +151,14 @@ saved: "{{ undef(hint='Internal task-local decoded ownership record') }}"
 # the region before ownership processing, sandbox resource queries or provisioning.
 # Nested sandbox credentials supply the authoritative region when present.
 aro_deploy_hcp: false
-# aro_hcp_nodepool_name (string): single HCP worker pool name.
+# aro_hcp_nodepool_name (string): single HCP worker pool name, 1–15 characters.
 aro_hcp_nodepool_name: workers
-# aro_hcp_availability_zone (string): zone for this pool. Multiple pools/zones
-# are outside the initial implementation. Must be available for the worker SKU.
-aro_hcp_availability_zone: '1'
+# aro_hcp_availability_zone (string or null): logical zone such as '1', '2' or
+# '3', subject to worker SKU availability. Null uses the archived HCP zone,
+# or an availability set if there is no HCP archive. Set an empty string to
+# request an availability set explicitly after removing an archived zonal
+# deployment's resource groups.
+aro_hcp_availability_zone: null
 # aro_hcp_vnet_integration_subnet_cidr (IPv4 CIDR): dedicated delegated subnet,
 # at least /28, disjoint from aro_worker_subnet_cidr and inside aro_vnet_cidr.
 # No master subnet or control-plane VMs are created in HCP mode.

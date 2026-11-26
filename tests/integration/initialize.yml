@@ -31,4 +31,5 @@
       - azure_settings.worker_size == (expected_worker_size | default('Standard_D4s_v5'))
       - azure_settings.hcp == (expected_hcp | default(false))
       - azure_settings.worker_count == (expected_worker_count | default(3))
+      - azure_settings.hcp_zone | default('') == (expected_hcp_zone | default(''))
     no_log: true

@@ -3,7 +3,7 @@
 Create or reconnect to a standard Azure Red Hat OpenShift cluster, configure
 bastion access, and export the cluster credentials to the controller. The v2
 `host_ocp4_deploy` dispatcher selects this role when
-`host_ocp4_deploy_installation_method: aro`. Set `aro_deploy_hcp: true` to select the HCP preview branch; see the collection guide.
+`host_ocp4_deploy_installation_method: aro`. Set `aro_deploy_hcp: true` to select HCP with OpenShift 5.
 
 ## Prerequisites and execution
 
@@ -25,8 +25,11 @@ the `aro_*` inputs of [initialize](../initialize/defaults/main.yml). Its normali
 
 The principal in `azure_auth` always authenticates provisioning. `aro_identity_mode`
 chooses the cluster identity (`managed_identity` or `service_principal`), not the
-authentication method for this Ansible run. `ocp4_pull_secret` is optional and
-defaults to an empty string; an explicit secret may be JSON text or a mapping.
+authentication method for this Ansible run. Pass `ocp4_pull_secret` through
+protected deployment variables as Docker config JSON or a mapping with an
+`auths` object containing valid `registry.redhat.io` credentials. It is required
+for HCP and optional for classic ARO. Classic ARO passes a supplied secret to
+`az aro create --pull-secret` when creating the cluster.
 
 `ansible_user` identifies the bastion login account. `cluster_name` names the
 local authentication directory `/home/<ansible_user>/<cluster_name>/auth`; the
@@ -86,7 +89,7 @@ is removed in an `always` block, on success or failure. Persistent kubeconfigs a
 the exported password are intentionally retained. Destruction later runs
 `host_ocp4_aro_destroy` on the controller before bastion infrastructure cleanup.
 
-The provider module protects the principal password and optional pull secret as
+The provider module protects the principal password and pull secret as
 individual argument fields. Whole settings mappings must not be marked secret:
 Ansible also removes those values from returned URLs and passwords, which makes
 connection data unusable. ARO provisioning/login tasks retain task-level `no_log`
@@ -109,15 +112,17 @@ an `include_role` task. See the v2 Azure sample for credential and version input
 
 ## HCP branch
 
-HCP remains experimental: the latest live test created a ready control plane,
-but its worker pool failed with Azure `DeadlineExceeded` and
-`hypershift node pool not cached yet`. The underlying cause remains under
-engineering investigation. See the collection guide's
-[live validation status](../../README.md#live-validation-status) before opting in.
+See the collection guide's [live validation status](../../README.md#live-validation-status).
 
 With `aro_deploy_hcp: true`, the provider uses the HCP resource type and owned
-ARM prerequisites instead of the classic API. It waits for cluster and node pool,
-installs the exact selected client, then invokes `host_ocp4_aro_hcp_credentials`.
+ARM prerequisites. It creates the worker pool after the OpenShift 5 control plane
+reaches `Succeeded`. If a retry finds a ready control plane without a pool, it
+resumes at pool creation. After the pool succeeds, the role installs the client
+for the selected patch and invokes `host_ocp4_aro_hcp_credentials`. With that
+administrative kubeconfig, it merges the supplied registry entries into
+`kube-system/additional-pull-secret` before workloads run, preserving entries
+for other registries. Rerunning HCP provisioning also applies secret changes
+to an existing cluster. See [Microsoft's HCP pull secret guide](https://learn.microsoft.com/en-us/azure/openshift/how-to-add-pull-secrets).
 The classic password login/access task file is skipped. HCP uses two workers by
 default and requires managed identity. No openshift-install program is used in
 either ARO architecture. See the collection's HCP section and initialize/defaults

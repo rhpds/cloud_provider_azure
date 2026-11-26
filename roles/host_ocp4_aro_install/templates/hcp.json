@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "5489933000295085926"
+      "templateHash": "13842419293048850512"
     }
   },
   "parameters": {
@@ -45,22 +45,10 @@
         "description": "The cluster managed resource group name"
       }
     },
-    "nodePoolName": {
-      "type": "string",
-      "metadata": {
-        "description": "The name of the node pool"
-      }
-    },
     "clusterVersion": {
       "type": "string",
       "metadata": {
-        "description": "The OpenShift version for the cluster (X.Y format, e.g. 4.20)"
-      }
-    },
-    "nodePoolVersion": {
-      "type": "string",
-      "metadata": {
-        "description": "The OpenShift version for the node pool (X.Y.Z format, e.g. 4.20.8)"
+        "description": "The OpenShift minor release for the control plane (e.g. 5.0)"
       }
     },
     "privateKeyVault": {
@@ -104,18 +92,6 @@
       }
     },
     "projectTag": {
-      "type": "string"
-    },
-    "workerSize": {
-      "type": "string"
-    },
-    "workerCount": {
-      "type": "int"
-    },
-    "workerDisk": {
-      "type": "int"
-    },
-    "workerZone": {
       "type": "string"
     },
     "podCidr": {
@@ -859,7 +835,7 @@
     },
     {
       "type": "Microsoft.RedHatOpenShift/hcpOpenShiftClusters",
-      "apiVersion": "2026-09-01-preview",
+      "apiVersion": "2026-10-01",
       "name": "[parameters('clusterName')]",
       "location": "[resourceGroup().location]",
       "tags": {
@@ -993,35 +969,6 @@
         "[extensionResourceId(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-cp-kms-{1}', parameters('clusterName'), variables('randomSuffix'))), 'Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-service-managed-identity-{1}', parameters('clusterName'), variables('randomSuffix'))), variables('readerRoleId'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-cp-kms-{1}', parameters('clusterName'), variables('randomSuffix')))))]",
         "[extensionResourceId(resourceId('Microsoft.Network/networkSecurityGroups', parameters('customerNsgName')), 'Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-service-managed-identity-{1}', parameters('clusterName'), variables('randomSuffix'))), variables('hcpServiceManagedIdentityRoleId'), resourceId('Microsoft.Network/networkSecurityGroups', parameters('customerNsgName'))))]",
         "[extensionResourceId(resourceId('Microsoft.Network/virtualNetworks', parameters('customerVnetName')), 'Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-service-managed-identity-{1}', parameters('clusterName'), variables('randomSuffix'))), variables('hcpServiceManagedIdentityRoleId'), resourceId('Microsoft.Network/virtualNetworks', parameters('customerVnetName'))))]"
-      ]
-    },
-    {
-      "type": "Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools",
-      "apiVersion": "2026-09-01-preview",
-      "name": "[format('{0}/{1}', parameters('clusterName'), parameters('nodePoolName'))]",
-      "location": "[resourceGroup().location]",
-      "tags": {
-        "agnosticd_project": "[parameters('projectTag')]"
-      },
-      "properties": {
-        "version": {
-          "id": "[parameters('nodePoolVersion')]",
-          "channelGroup": "stable"
-        },
-        "platform": {
-          "subnetId": "[reference(resourceId('Microsoft.RedHatOpenShift/hcpOpenShiftClusters', parameters('clusterName')), '2026-09-01-preview').platform.subnetId]",
-          "availabilityZone": "[parameters('workerZone')]",
-          "vmSize": "[parameters('workerSize')]",
-          "osDisk": {
-            "sizeGiB": "[parameters('workerDisk')]",
-            "diskStorageAccountType": "StandardSSD_LRS"
-          }
-        },
-        "replicas": "[parameters('workerCount')]",
-        "autoRepair": true
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.RedHatOpenShift/hcpOpenShiftClusters', parameters('clusterName'))]"
       ]
     }
   ]

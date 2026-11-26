@@ -2,7 +2,7 @@
 
 Collection namespace: `agnosticd.cloud_provider_azure`. This collection supports
 new v2 deployments: a Linux bastion, self-managed Azure OpenShift IPI and standard
-architecture ARO, with opt-in ARO Hosted Control Planes (HCP) preview support.
+architecture ARO, with opt-in ARO hosted control planes (HCP) on OpenShift 5.
 
 ## Roles
 
@@ -29,6 +29,7 @@ by those roles; the collection READMEs identify those dependencies.
 | [installer_platform](roles/installer_platform/README.md) | Render Azure YAML fragments for the shared IPI installer |
 | [host_ocp4_aro_install](roles/host_ocp4_aro_install/README.md) | Delegated bastion: provision/reconnect ARO and export access files |
 | [host_ocp4_aro_hcp_credentials](roles/host_ocp4_aro_hcp_credentials/README.md) | Bastion: issue/refresh temporary HCP administrative kubeconfig |
+| [host_ocp4_aro_hcp_external_auth](roles/host_ocp4_aro_hcp_external_auth/README.md) | Controller: register Keycloak as the HCP console identity provider |
 | [host_ocp4_aro_destroy](roles/host_ocp4_aro_destroy/README.md) | Controller: delete ARO before its owned network/identity group |
 | [scale_ocp_workers](roles/scale_ocp_workers/README.md) | Controller: scale or add worker MachineSets on a self-managed IPI cluster |
 | [lifecycle](roles/lifecycle/README.md) | Controller: start, stop or report status using a separate lifecycle action |
@@ -117,10 +118,14 @@ Or:
 host_ocp4_deploy_installation_method: aro
 aro_version: <exact version from az aro get-versions --location eastus>
 aro_identity_mode: managed_identity  # alternatively service_principal
+ocp4_pull_secret: <Red Hat pull secret>
 ```
 
-ARO uses public API/ingress and Azure-managed endpoint DNS. Its pull secret is
-optional. Defaults are three workers, D8s_v5 control plane, D4s_v5 workers and
+ARO uses public API/ingress and Azure-managed endpoint DNS. Classic ARO passes
+an optional Red Hat pull secret during cluster creation. HCP requires the pull
+secret and applies it after obtaining administrative access. Supply it through
+protected deployment variables.
+Classic ARO defaults are three workers, D8s_v5 control plane, D4s_v5 workers and
 128 GiB worker disks. Override `aro_master_vm_size`, `aro_worker_vm_size`,
 `aro_worker_count`, `aro_worker_disk_size`, `aro_vnet_cidr`,
 `aro_master_subnet_cidr`, `aro_worker_subnet_cidr`, `aro_pod_cidr`, and
@@ -242,22 +247,14 @@ References: [Microsoft ARO creation](https://learn.microsoft.com/en-us/azure/ope
 [ARO CLI](https://learn.microsoft.com/en-us/cli/azure/aro),
 [Red Hat Azure installation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html-single/installing_on_azure/installing_on_azure).
 
-## Hosted control planes (preview)
+## Hosted control planes
 
 ### Live validation status
 
-Self-managed Azure IPI and standard ARO have completed live provisioning tests.
-HCP remains experimental. The latest HCP test created a ready control plane in
-`westeurope`, but the worker pool failed with Azure `DeadlineExceeded` and
-`hypershift node pool not cached yet`; no worker VMs appeared. The underlying
-cause remains under engineering investigation. Offline checks cover the provider
-logic but do not establish successful HCP provisioning. Leave `aro_deploy_hcp`
-false to use the validated standard ARO path.
-
-The failure is a terminal Azure deployment state, so increasing the Ansible
-timeout cannot recover that operation. Preserve the failed deployment's ARM
-operation details and correlation ID for the HCP engineering investigation.
-The collection does not automatically delete and recreate failed resources.
+Self-managed Azure IPI, standard ARO, and OpenShift 5 HCP have completed live
+provisioning tests. The HCP deployment follows the
+[Red Hat HCP quickstart](https://cloud.redhat.com/experts/aro/quickstart-hcp/)
+sequence and creates the worker pool after the control plane is ready.
 
 ### Configuration and lifecycle
 
@@ -268,13 +265,20 @@ architecture. A provision run can replace archived cluster settings only after
 verifying that all deployment groups are absent. Keep the ownership archive and
 continue using the existing ARO install/destroy roles.
 
-HCP defaults to two Standard_D4s_v5 workers in one node pool/zone, public API and
+HCP defaults to two Standard_D4s_v5 workers in one availability set, public API and
 ingress, managed identities, OVN-Kubernetes, and a public owned encryption vault.
-`aro_version` must be an exact advertised HCP release: its minor selects the
-control plane, and its full version selects the node pool and client. Standard
-master size/subnet inputs are unused. See initialize/defaults for the pool,
-logical zone and integration CIDR options. Initialization queries Azure provider
-metadata for HCP-specific regions immediately after login, before reading ownership
+`aro_version` must be an enabled stable OpenShift 5 patch for new provisioning.
+Its minor selects the control plane and the full patch selects the pool and
+client. Keep the original version when running lifecycle or destroy against
+an older preview deployment. See initialize/defaults for the pool,
+logical zone and integration CIDR options. To request zonal placement, select
+a logical zone such as `'1'` from the worker SKU's advertised zones. An unset
+zone uses the archived HCP zone on a retry, lifecycle operation, or destroy.
+Use an empty string to request an availability set explicitly. A placement
+change requires the prior deployment resource groups to be absent. New HCP
+worker pools use Premium SSD OS disks.
+Initialization queries Azure provider metadata for HCP-specific regions
+immediately after login, before reading ownership
 archives or querying sandbox resources. Unsupported regions fail with the supported
 codes returned by Azure; the collection has no hardcoded region allowlist. The
 sandbox group's metadata location may differ from the deployment region; its
@@ -294,24 +298,27 @@ Azure returns display names (for example, `East US 2`); use their location codes
 case sensitivity and normalizes the returned locations. Missing HCP metadata or
 access failures abort validation without falling back to classic ARO locations.
 
-Discover regional HCP releases with this read-only command, replacing both
-placeholders (classic `az aro get-versions` queries a different resource type):
+Discover regional HCP patches with this read-only command in Azure CLI 2.93.0
+or later. Run it in the target subscription and substitute your region:
 
 ```sh
-az rest --method get --url \
-  'https://management.azure.com/subscriptions/<subscription-id>/providers/Microsoft.RedHatOpenShift/locations/<region>/hcpOpenShiftVersions?api-version=2026-09-01-preview'
+az aro hcp get-versions --location eastus2 --node-pools \
+  --query "[?ChannelGroup=='stable' && starts_with(Name, '5.')].Name" -o table
 ```
 
-Select an exact advertised release for `aro_version`. See Microsoft's
+Select a listed patch for `aro_version`. See Microsoft's
 [HCP configuration guide](https://learn.microsoft.com/azure/openshift/howto-choose-cluster-configuration)
-for current preview regions and permanent cluster settings, and the
+for supported regions and permanent cluster settings, and the
 [cluster creation guide](https://learn.microsoft.com/azure/openshift/howto-create-custom-hosted-cluster)
 for subscription permissions and resource prerequisites.
 
-HCP uses pinned ARM REST API 2026-09-01-preview and the checked-in ARM template;
-there is no runtime Bicep compiler or preview CLI extension dependency. The
-provider creates operator identities, scoped role assignments, dedicated VNet
-integration, and an encryption key/vault before the cluster and worker pool.
+HCP uses stable ARM API `2026-10-01` and the checked-in ARM template. The
+template deploys the control plane with operator identities, scoped role
+assignments, dedicated VNet integration and a customer-managed encryption key.
+After it reaches `Succeeded`, the provider creates the worker pool separately
+through ARM. A retry with a ready control plane and a missing pool resumes at
+pool creation. The automated flow uses the existing Azure CLI pin for
+authentication and ARM deployment and does not call `az aro hcp`.
 Failed resource states require explicit destruction; ready resources are reused.
 Destroy deletes the parent cluster, which cascades to its node pools, and waits
 for cluster and managed-group removal before deleting prerequisites. Azure rejects
@@ -330,11 +337,12 @@ HCP has no built-in kubeadmin login/password. The
 [host_ocp4_aro_hcp_credentials role](roles/host_ocp4_aro_hcp_credentials/README.md)
 issues temporary admin access, exports the standard kubeconfig and records its
 expiry. Credentials expire after 24 hours; rerun that role on the bastion after
-initializing the original controller context to refresh all copies. Regular
-OIDC users, console authentication, private endpoints, multiple node pools and
-automated upgrades are outside this initial implementation. Never use the
-standard password-based info role for HCP.
+initializing the original controller context to refresh all copies. For browser
+sign-in, the core authentication workload can provision Keycloak and use
+`host_ocp4_aro_hcp_external_auth` to configure direct OIDC on the HCP cluster.
+Private endpoints, multiple node pools, and automated upgrades are outside
+this implementation.
 
-The v2 sample `openshift-cluster-aro-hcp-azure.yml` documents required sandbox
-inputs and the preview defaults. Live HCP provisioning is not covered by the
-offline test suite.
+The [v2 HCP sample](https://github.com/rhpds/agnosticd-v2/blob/main/ansible/configs/openshift-cluster/sample_vars/openshift-cluster-aro-hcp-azure.yml)
+documents the sandbox inputs, required pull secret, tested West Europe worker
+sizing, and Keycloak console setup. The collection test suite runs offline.
