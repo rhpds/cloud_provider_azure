@@ -1,0 +1,28 @@
+---
+# Scale existing MachineSets round-robin across zones.
+
+- name: Calculate round-robin distribution
+  ansible.builtin.include_tasks: distribute_replicas.yml
+  vars:
+    distribution_slots: "{{ target_machinesets | length }}"
+
+- name: Display scaling plan
+  ansible.builtin.debug:
+    msg: "Scaling {{ item.0.metadata.name }} to {{ item.1 }} replicas"
+  loop: "{{ target_machinesets | zip(replica_distribution) | list }}"
+  loop_control:
+    label: "{{ item.0.metadata.name }}"
+
+- name: Scale MachineSets
+  kubernetes.core.k8s:
+    api_version: machine.openshift.io/v1beta1
+    kind: MachineSet
+    namespace: openshift-machine-api
+    name: "{{ item.0.metadata.name }}"
+    state: present
+    definition:
+      spec:
+        replicas: "{{ item.1 | int }}"
+  loop: "{{ target_machinesets | zip(replica_distribution) | list }}"
+  loop_control:
+    label: "{{ item.0.metadata.name }} -> {{ item.1 }} replicas"

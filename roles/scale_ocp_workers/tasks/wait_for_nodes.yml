@@ -1,0 +1,55 @@
+---
+- name: Print wait parameters
+  ansible.builtin.debug:
+    msg: "Waiting {{ worker_scale_retries }}*{{ worker_scale_delay }} seconds for {{ worker_instance_count }} worker nodes to be Ready"
+
+- name: Wait for worker nodes to be ready
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+    label_selectors:
+    - "node-role.kubernetes.io/worker"
+    - "!node-role.kubernetes.io/control-plane"
+  register: r_worker_nodes
+  until: >-
+    r_worker_nodes.resources is defined
+    and (r_worker_nodes.resources | length > 0)
+    and (r_worker_nodes.resources | length >= worker_instance_count | int)
+    and
+    (r_worker_nodes.resources
+      | selectattr('status.conditions', 'defined')
+      | rejectattr('status.conditions', 'equalto', [])
+      | list
+      | json_query("[?status.conditions[?type=='Ready' && status=='True' && reason=='KubeletReady']]")
+      | length >= worker_instance_count | int)
+  retries: "{{ worker_scale_retries | int }}"
+  delay: "{{ worker_scale_delay }}"
+  ignore_errors: true
+
+- name: Print worker node status
+  when: r_worker_nodes.resources is defined
+  ansible.builtin.debug:
+    msg:
+    - "Worker nodes ready: {{ r_worker_nodes.resources | length }}"
+    - "Node names: {{ r_worker_nodes.resources | map(attribute='metadata.name') | list }}"
+
+- name: Check if worker nodes are ready
+  ansible.builtin.set_fact:
+    _worker_nodes_ready: >-
+      {{
+        r_worker_nodes.resources is defined
+        and (r_worker_nodes.resources | length > 0)
+        and (r_worker_nodes.resources | length >= worker_instance_count | int)
+        and
+        (r_worker_nodes.resources
+          | selectattr('status.conditions', 'defined')
+          | rejectattr('status.conditions', 'equalto', [])
+          | list
+          | json_query("[?status.conditions[?type=='Ready' && status=='True' && reason=='KubeletReady']]")
+          | length >= worker_instance_count | int)
+      }}
+
+- name: Fail if less worker nodes are ready than expected
+  when: not _worker_nodes_ready
+  ansible.builtin.fail:
+    msg: "Nodes are not ready after {{ worker_scale_retries }}*{{ worker_scale_delay }} seconds"

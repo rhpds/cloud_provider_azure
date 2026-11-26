@@ -1,0 +1,36 @@
+---
+# openshift_api_url (string): API URL of the existing self-managed OpenShift IPI
+# cluster, for example https://api.cluster.example.com:6443. Not for ARO or HCP.
+openshift_api_url: "{{ undef(hint='Supply the cluster API URL') }}"
+# openshift_cluster_admin_token (secret string): cluster-admin bearer token.
+openshift_cluster_admin_token: "{{ undef(hint='Supply a cluster-admin token') }}"
+# openshift_validate_certs (bool): validate the API server certificate.
+openshift_validate_certs: false
+
+# worker_instance_count (int): number of worker nodes to scale to. Workers are
+# distributed round-robin across the zone MachineSets.
+worker_instance_count: 0
+
+# worker_instance_type (string): Azure VM size for workers, for example
+# Standard_D8as_v5. If empty or equal to the vmSize of existing worker
+# MachineSets, those MachineSets are scaled. If different, new MachineSets are
+# copied from the existing ones with this vmSize. Required when the cluster has
+# no worker MachineSet and they must be created from a control-plane Machine.
+worker_instance_type: ""
+
+# worker_machineset_suffix (string): suffix for MachineSets created for a
+# different VM size, for example "compute". Results in names like
+# ocp-xjgsc-worker-eastus1-compute.
+worker_machineset_suffix: compute
+
+# Retry settings while waiting for worker nodes to report Ready.
+worker_scale_retries: 90
+worker_scale_delay: 10
+
+# worker_only (bool): remove the worker role from control-plane nodes and set
+# mastersSchedulable: false so only the new workers run workloads.
+worker_only: false
+
+# worker_drain_control_plane (bool): with worker_only, drain control-plane nodes
+# so existing workloads move to the new workers.
+worker_drain_control_plane: true
